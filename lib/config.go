@@ -12,5 +12,5 @@ type Config struct {
 }
 
 func (c *Config) Addr() (*net.TCPAddr, error) {
-	return net.ResolveIPAddr("tcp", fmt.Sprintf("%s:%d", c.BindAddr, c.BindPort))
+	return net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", c.BindAddr, c.BindPort))
 }

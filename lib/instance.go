@@ -1,12 +1,15 @@
 package huton
 
 import (
+	"fmt"
 	"github.com/hashicorp/serf/serf"
 	"sync"
 )
 
 type Instance interface {
 	Cache(name string) *Cache
+	Members() []string
+	Close() error
 }
 
 type instance struct {
@@ -34,4 +37,23 @@ func (i *instance) Cache(name string) *Cache {
 		return c
 	}
 	return NewCache()
+}
+
+func (i *instance) Members() []string {
+	me := i.serf.LocalMember()
+	members := i.serf.Members()
+	peers := make([]string, 0, len(members))
+	for _, member := range members {
+		if member.Addr.String() != me.Addr.String() || member.Port != me.Port {
+			peers = append(peers, fmt.Sprintf("%s:%d", member.Addr.String(), member.Port))
+		}
+	}
+	return peers
+}
+
+func (i instance) Close() error {
+	if err := i.serf.Leave(); err != nil {
+		return err
+	}
+	return i.serf.Shutdown()
 }

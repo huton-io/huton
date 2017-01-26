@@ -1,8 +1,9 @@
 package huton
 
 import (
+	"fmt"
 	"github.com/hashicorp/serf/serf"
-	"os"
+	"strconv"
 )
 
 func (i *instance) setupSerf() error {
@@ -12,11 +13,11 @@ func (i *instance) setupSerf() error {
 	if err != nil {
 		return err
 	}
-	config.MemberlistConfig.BindAddr = addr.IP
+	config.MemberlistConfig.BindAddr = addr.IP.String()
 	config.MemberlistConfig.BindPort = addr.Port
-	config.NodeName, _ = os.Hostname()
+	config.NodeName = fmt.Sprintf("%s:%d", config.MemberlistConfig.BindAddr, config.MemberlistConfig.BindPort)
 	config.Tags["id"] = config.NodeName
-	config.Tags["port"] = addr.Port
+	config.Tags["port"] = strconv.Itoa(addr.Port)
 	config.EventCh = i.serfEventChannel
 	config.EnableNameConflictResolution = false
 	s, err := serf.Create(config)
