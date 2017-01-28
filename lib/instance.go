@@ -2,9 +2,32 @@ package huton
 
 import (
 	"fmt"
+	"github.com/hashicorp/raft"
 	"github.com/hashicorp/serf/serf"
 	"sync"
 )
+
+type Config struct {
+	Serf  SerfConfig
+	Raft  RaftConfig
+	Peers []string
+}
+
+func DefaultConfig() Config {
+	return Config{
+		Serf: SerfConfig{
+			BindAddr: "0.0.0.0",
+			BindPort: 5557,
+		},
+		Raft: RaftConfig{
+			BindAddr:            "0.0.0.0",
+			BindPort:            5567,
+			RetainSnapshotCount: 2,
+			MaxPool:             3,
+			Timeout:             "10s",
+		},
+	}
+}
 
 type Instance interface {
 	Cache(name string) *Cache
@@ -15,9 +38,11 @@ type Instance interface {
 type instance struct {
 	serf             *serf.Serf
 	serfEventChannel chan serf.Event
+	shutdownCh       chan struct{}
 	cacheMu          sync.Mutex
 	config           *Config
 	caches           map[string]*Cache
+	raft             *raft.Raft
 }
 
 func NewInstance(config *Config) (Instance, error) {
@@ -26,8 +51,14 @@ func NewInstance(config *Config) (Instance, error) {
 		config:           config,
 		caches:           make(map[string]*Cache),
 	}
-	err := i.setupSerf()
-	return i, err
+	if err := i.setupRaft(); err != nil {
+		return nil, err
+	}
+	if err := i.setupSerf(); err != nil {
+		return nil, err
+	}
+	go i.handleEvents()
+	return i, nil
 }
 
 func (i *instance) Cache(name string) *Cache {
@@ -52,8 +83,27 @@ func (i *instance) Members() []string {
 }
 
 func (i instance) Close() error {
+	i.shutdownCh <- struct{}{}
+	close(i.shutdownCh)
 	if err := i.serf.Leave(); err != nil {
 		return err
 	}
-	return i.serf.Shutdown()
+	if err := i.serf.Shutdown(); err != nil {
+		return err
+	}
+	if err := i.raft.Shutdown().Error(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (i *instance) handleEvents() {
+	for {
+		select {
+		case e := <-i.serfEventChannel:
+			i.handleSerfEvent(e)
+		case <-i.shutdownCh:
+			return
+		}
+	}
 }

@@ -3,13 +3,23 @@ package huton
 import (
 	"fmt"
 	"github.com/hashicorp/serf/serf"
+	"net"
 	"strconv"
 )
+
+type SerfConfig struct {
+	BindAddr string `json:"bindAddr" yaml:"bindAddr"`
+	BindPort int    `json:"bindPort" yaml:"bindPort"`
+}
+
+func (c *SerfConfig) Addr() (*net.TCPAddr, error) {
+	return net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", c.BindAddr, c.BindPort))
+}
 
 func (i *instance) setupSerf() error {
 	config := serf.DefaultConfig()
 	config.Init()
-	addr, err := i.config.Addr()
+	addr, err := i.config.Serf.Addr()
 	if err != nil {
 		return err
 	}
@@ -31,4 +41,25 @@ func (i *instance) setupSerf() error {
 		}
 	}
 	return nil
+}
+
+func (i *instance) handleSerfEvent(event serf.Event) {
+	switch event.EventType() {
+	case serf.EventMemberJoin:
+		i.peerJoined(event.(serf.MemberEvent))
+	case serf.EventMemberLeave, serf.EventMemberFailed:
+		i.peerGone(event.(serf.MemberEvent))
+	}
+}
+
+func (i *instance) peerJoined(event serf.MemberEvent) {
+	for _, m := range event.Members {
+		i.applyCommand(joinCmd, "", fmt.Sprintf("%s:%d", m.Addr.String(), m.Port))
+	}
+}
+
+func (i *instance) peerGone(event serf.MemberEvent) {
+	for _, m := range event.Members {
+		i.applyCommand(leaveCmd, "", fmt.Sprintf("%s:%d", m.Addr.String(), m.Port))
+	}
 }

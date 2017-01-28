@@ -16,19 +16,21 @@ type Command struct {
 	ShutdownCh <-chan struct{}
 }
 
-func (c *Command) readConfig() (*Config, error) {
-	config := DefaultConfig()
+func (c *Command) readConfig() (*huton.Config, error) {
+	config := huton.DefaultConfig()
 	flags := flag.NewFlagSet("agent", flag.ContinueOnError)
 	flags.Usage = func() {
 		c.UI.Output(c.Help())
 	}
-	flags.StringVar(&config.BindAddr, "bind", "0.0.0.0", "address to bind to")
-	flags.IntVar(&config.BindPort, "port", 8080, "port to bind to")
+	flags.StringVar(&config.Serf.BindAddr, "serfBind", "0.0.0.0", "address to bind serf to")
+	flags.IntVar(&config.Serf.BindPort, "serfPort", 8080, "port to bind serf to")
+	flags.StringVar(&config.Raft.BindAddr, "raftBind", "0.0.0.0", "address to bind raft to")
+	flags.IntVar(&config.Raft.BindPort, "raftPort", 8080, "port to bind raft to")
 	flags.Var((*command.AppendSliceValue)(&config.Peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		return nil, err
 	}
-	return config, nil
+	return &config, nil
 }
 
 func (c *Command) Run(args []string) int {
@@ -38,15 +40,15 @@ func (c *Command) Run(args []string) int {
 		return 1
 	}
 	fmt.Println(config)
-	_, err = huton.NewInstance(&config.Config)
+	_, err = huton.NewInstance(config)
 	if err != nil {
 		c.UI.Error(err.Error())
 		return 1
 	}
-	return c.handleSignals(config)
+	return c.handleSignals()
 }
 
-func (c *Command) handleSignals(config *Config) int {
+func (c *Command) handleSignals() int {
 	signalCh := make(chan os.Signal, 3)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 	select {

@@ -14,13 +14,15 @@ type Command struct {
 }
 
 func (c *Command) readConfig() (*huton.Config, error) {
-	var config huton.Config
+	config := huton.DefaultConfig()
 	flags := flag.NewFlagSet("members", flag.ContinueOnError)
 	flags.Usage = func() {
 		c.UI.Output(c.Help())
 	}
-	flags.StringVar(&config.BindAddr, "bind", "0.0.0.0", "address to bind to")
-	flags.IntVar(&config.BindPort, "port", 8080, "port to bind to")
+	flags.StringVar(&config.Serf.BindAddr, "serfBind", "0.0.0.0", "address to bind serf to")
+	flags.IntVar(&config.Serf.BindPort, "serfPort", 8080, "port to bind serf to")
+	flags.StringVar(&config.Raft.BindAddr, "raftBind", "0.0.0.0", "address to bind raft to")
+	flags.IntVar(&config.Raft.BindPort, "raftPort", 8080, "port to bind raft to")
 	flags.Var((*command.AppendSliceValue)(&config.Peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		return nil, err
