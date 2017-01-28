@@ -28,7 +28,6 @@ type command struct {
 type RaftConfig struct {
 	BindAddr            string `json:"bindAddr" yaml:"bindAddr"`
 	BindPort            int    `json:"bindPort" yaml:"bindPort"`
-	BaseDir             string `json:"baseDir" yaml:"baseDir"`
 	RetainSnapshotCount int    `json:"retainSnapshotCount" yaml:"retainSnapshotCount"`
 	MaxPool             int    `json:"maxPool" yaml:"maxPool"`
 	Timeout             string `json:"timeout" yaml:"timeout"`
@@ -52,7 +51,7 @@ func (i *instance) setupRaft() error {
 	if err != nil {
 		return err
 	}
-	peerStore := raft.NewJSONPeers(i.config.Raft.BaseDir, transport)
+	peerStore := raft.NewJSONPeers(i.config.BaseDir, transport)
 	peers, err := peerStore.Peers()
 	if err != nil {
 		return err
@@ -61,11 +60,11 @@ func (i *instance) setupRaft() error {
 		config.EnableSingleNode = true
 		config.DisableBootstrapAfterElect = false
 	}
-	snapshots, err := raft.NewFileSnapshotStore(i.config.Raft.BaseDir, i.config.Raft.RetainSnapshotCount, os.Stderr)
+	snapshots, err := raft.NewFileSnapshotStore(i.config.BaseDir, i.config.Raft.RetainSnapshotCount, os.Stderr)
 	if err != nil {
 		return err
 	}
-	logStore, err := raftboltdb.NewBoltStore(filepath.Join(i.config.Raft.BaseDir, "raft.db"))
+	logStore, err := raftboltdb.NewBoltStore(filepath.Join(i.config.BaseDir, "raft.db"))
 	if err != nil {
 		return err
 	}

@@ -8,9 +8,10 @@ import (
 )
 
 type Config struct {
-	Serf  SerfConfig
-	Raft  RaftConfig
-	Peers []string
+	Serf    SerfConfig
+	Raft    RaftConfig
+	Peers   []string
+	BaseDir string
 }
 
 func DefaultConfig() Config {
@@ -30,7 +31,7 @@ func DefaultConfig() Config {
 }
 
 type Instance interface {
-	Cache(name string) *Cache
+	Cache(name string) (*Cache, error)
 	Members() []string
 	Close() error
 }
@@ -61,13 +62,13 @@ func NewInstance(config *Config) (Instance, error) {
 	return i, nil
 }
 
-func (i *instance) Cache(name string) *Cache {
+func (i *instance) Cache(name string) (*Cache, error) {
 	i.cacheMu.Lock()
 	defer i.cacheMu.Unlock()
 	if c, ok := i.caches[name]; ok {
-		return c
+		return c, nil
 	}
-	return NewCache()
+	return NewCache(i.config.BaseDir, name)
 }
 
 func (i *instance) Members() []string {
