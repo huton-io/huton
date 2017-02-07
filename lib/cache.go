@@ -8,12 +8,13 @@ import (
 )
 
 type Cache struct {
-	mu   sync.RWMutex
-	db   *bolt.DB
-	name string
+	mu       sync.RWMutex
+	db       *bolt.DB
+	name     string
+	instance *instance
 }
 
-func NewCache(baseDir string, name string) (*Cache, error) {
+func newCache(baseDir string, name string, instance *instance) (*Cache, error) {
 	db, err := bolt.Open(filepath.Join(baseDir, "caches", name+".db"), 0644, &bolt.Options{
 		Timeout: 10 * time.Second,
 	})
@@ -21,8 +22,9 @@ func NewCache(baseDir string, name string) (*Cache, error) {
 		return nil, err
 	}
 	return &Cache{
-		db:   db,
-		name: name,
+		db:       db,
+		name:     name,
+		instance: instance,
 	}, nil
 }
 
@@ -39,22 +41,9 @@ func (c *Cache) Get(key []byte) ([]byte, error) {
 }
 
 func (c *Cache) Set(key, value []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte(c.name))
-		if err != nil {
-			return err
-		}
-		return bucket.Put(key, value)
-	})
+	return nil
 }
 
 func (c *Cache) Delete(key []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(c.name))
-		return bucket.Delete(key)
-	})
+	return nil
 }

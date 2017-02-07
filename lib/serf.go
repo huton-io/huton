@@ -16,18 +16,17 @@ func (c *SerfConfig) Addr() (*net.TCPAddr, error) {
 	return net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", c.BindAddr, c.BindPort))
 }
 
-func (i *instance) setupSerf() error {
+func (i *instance) setupSerf(addr *net.TCPAddr) error {
 	config := serf.DefaultConfig()
 	config.Init()
-	addr, err := i.config.Serf.Addr()
-	if err != nil {
-		return err
-	}
 	config.MemberlistConfig.BindAddr = addr.IP.String()
 	config.MemberlistConfig.BindPort = addr.Port
 	config.NodeName = fmt.Sprintf("%s:%d", config.MemberlistConfig.BindAddr, config.MemberlistConfig.BindPort)
+	fmt.Println(config.NodeName)
+	fmt.Println(config.NodeName)
 	config.Tags["id"] = config.NodeName
-	config.Tags["port"] = strconv.Itoa(addr.Port)
+	config.Tags["raftIP"] = i.config.Raft.BindAddr
+	config.Tags["raftPort"] = strconv.Itoa(i.config.Raft.BindPort)
 	config.EventCh = i.serfEventChannel
 	config.EnableNameConflictResolution = false
 	s, err := serf.Create(config)
@@ -36,9 +35,7 @@ func (i *instance) setupSerf() error {
 	}
 	i.serf = s
 	if len(i.config.Peers) > 0 {
-		if _, err := s.Join(i.config.Peers, true); err != nil {
-			return err
-		}
+		s.Join(i.config.Peers, true)
 	}
 	return nil
 }
@@ -53,13 +50,25 @@ func (i *instance) handleSerfEvent(event serf.Event) {
 }
 
 func (i *instance) peerJoined(event serf.MemberEvent) {
-	for _, m := range event.Members {
-		i.applyCommand(joinCmd, "", fmt.Sprintf("%s:%d", m.Addr.String(), m.Port))
+	for _, member := range event.Members {
+		peer, err := newPeer(member)
+		if err == nil {
+			i.peersMu.Lock()
+			i.peers[peer.ID] = peer
+			i.peersMu.Unlock()
+			i.addRaftPeer(peer)
+		}
 	}
 }
 
 func (i *instance) peerGone(event serf.MemberEvent) {
-	for _, m := range event.Members {
-		i.applyCommand(leaveCmd, "", fmt.Sprintf("%s:%d", m.Addr.String(), m.Port))
+	for _, member := range event.Members {
+		peer, err := newPeer(member)
+		if err == nil {
+			i.peersMu.Lock()
+			delete(i.peers, peer.ID)
+			i.peersMu.Unlock()
+			i.removeRaftPeer(peer)
+		}
 	}
 }

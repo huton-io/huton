@@ -3,6 +3,7 @@ package huton
 import (
 	"fmt"
 	"github.com/hashicorp/raft"
+	"github.com/hashicorp/raft-boltdb"
 	"github.com/hashicorp/serf/serf"
 	"sync"
 )
@@ -12,6 +13,7 @@ type Config struct {
 	Raft    RaftConfig
 	Peers   []string
 	BaseDir string
+	Name    string
 }
 
 func DefaultConfig() Config {
@@ -32,30 +34,43 @@ func DefaultConfig() Config {
 
 type Instance interface {
 	Cache(name string) (*Cache, error)
-	Members() []string
+	Peers() []*Peer
+	Local() *Peer
 	Close() error
 }
 
 type instance struct {
-	serf             *serf.Serf
-	serfEventChannel chan serf.Event
-	shutdownCh       chan struct{}
-	cacheMu          sync.Mutex
-	config           *Config
-	caches           map[string]*Cache
-	raft             *raft.Raft
+	id                  string
+	serf                *serf.Serf
+	raft                *raft.Raft
+	raftJSONPeers       *raft.JSONPeers
+	raftBoltStore       *raftboltdb.BoltStore
+	serfEventChannel    chan serf.Event
+	shutdownCh          chan struct{}
+	peersMu             sync.Mutex
+	peers               map[string]*Peer
+	cacheMu             sync.Mutex
+	config              *Config
+	caches              map[string]*Cache
 }
 
 func NewInstance(config *Config) (Instance, error) {
+	addr, err := config.Serf.Addr()
+	if err != nil {
+		return nil, err
+	}
 	i := &instance{
+		id:               fmt.Sprintf("%s:%d", addr.IP.String(), addr.Port),
 		serfEventChannel: make(chan serf.Event),
+		shutdownCh:       make(chan struct{}),
+		peers:            make(map[string]*Peer),
 		config:           config,
 		caches:           make(map[string]*Cache),
 	}
-	if err := i.setupRaft(); err != nil {
+	if err := i.setupSerf(addr); err != nil {
 		return nil, err
 	}
-	if err := i.setupSerf(); err != nil {
+	if err := i.setupRaft(); err != nil {
 		return nil, err
 	}
 	go i.handleEvents()
@@ -68,33 +83,22 @@ func (i *instance) Cache(name string) (*Cache, error) {
 	if c, ok := i.caches[name]; ok {
 		return c, nil
 	}
-	return NewCache(i.config.BaseDir, name)
+	return newCache(i.config.BaseDir, name, i)
 }
 
-func (i *instance) Members() []string {
-	me := i.serf.LocalMember()
-	members := i.serf.Members()
-	peers := make([]string, 0, len(members))
-	for _, member := range members {
-		if member.Addr.String() != me.Addr.String() || member.Port != me.Port {
-			peers = append(peers, fmt.Sprintf("%s:%d", member.Addr.String(), member.Port))
+func (i *instance) Close() error {
+	if i.serf != nil {
+		if err := i.serf.Leave(); err != nil {
+			return err
 		}
 	}
-	return peers
-}
-
-func (i instance) Close() error {
-	i.shutdownCh <- struct{}{}
+	if i.raft != nil {
+		i.raftBoltStore.Close()
+		if err := i.raft.Shutdown().Error(); err != nil {
+			return err
+		}
+	}
 	close(i.shutdownCh)
-	if err := i.serf.Leave(); err != nil {
-		return err
-	}
-	if err := i.serf.Shutdown(); err != nil {
-		return err
-	}
-	if err := i.raft.Shutdown().Error(); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -103,8 +107,14 @@ func (i *instance) handleEvents() {
 		select {
 		case e := <-i.serfEventChannel:
 			i.handleSerfEvent(e)
+		case <-i.serf.ShutdownCh():
+			i.Close()
 		case <-i.shutdownCh:
 			return
 		}
 	}
+}
+
+func (i *instance) isLeader() bool {
+	return i.raft.State() == raft.Leader
 }

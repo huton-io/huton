@@ -1,29 +1,15 @@
 package huton
 
 import (
-	"encoding/json"
-	"fmt"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"time"
+	"errors"
+	"fmt"
 )
-
-type CmdType int
-
-const (
-	joinCmd CmdType = iota
-	leaveCmd
-)
-
-type command struct {
-	Cmd   CmdType          `json:"cmd"`
-	Key   *json.RawMessage `json:"key,omitempty"`
-	Value *json.RawMessage `json:"value,omitempty"`
-}
 
 type RaftConfig struct {
 	BindAddr            string `json:"bindAddr" yaml:"bindAddr"`
@@ -33,16 +19,17 @@ type RaftConfig struct {
 	Timeout             string `json:"timeout" yaml:"timeout"`
 }
 
-func (c RaftConfig) Addr() (*net.TCPAddr, error) {
+func (c *RaftConfig) Addr() (*net.TCPAddr, error) {
 	return net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", c.BindAddr, c.BindPort))
 }
 
 func (i *instance) setupRaft() error {
-	config := raft.DefaultConfig()
 	addr, err := i.config.Raft.Addr()
 	if err != nil {
 		return err
 	}
+	config := raft.DefaultConfig()
+	config.ShutdownOnRemove = false
 	t, err := time.ParseDuration(i.config.Raft.Timeout)
 	if err != nil {
 		return err
@@ -51,62 +38,58 @@ func (i *instance) setupRaft() error {
 	if err != nil {
 		return err
 	}
-	peerStore := raft.NewJSONPeers(i.config.BaseDir, transport)
-	peers, err := peerStore.Peers()
-	if err != nil {
+	if i.id == "" {
+		return errors.New("No instance id provided.")
+	}
+	basePath := filepath.Join(i.config.BaseDir, i.config.Name)
+	if err := removeOldPeersFile(basePath); err != nil {
 		return err
+	}
+	i.raftJSONPeers = raft.NewJSONPeers(basePath, transport)
+	var peers []string
+	for _, member := range i.serf.Members() {
+		peer, err := newPeer(member)
+		if err != nil {
+			return err
+		}
+		peers = append(peers, peer.RaftAddr.String())
 	}
 	if len(peers) <= 1 {
 		config.EnableSingleNode = true
 		config.DisableBootstrapAfterElect = false
 	}
-	snapshots, err := raft.NewFileSnapshotStore(i.config.BaseDir, i.config.Raft.RetainSnapshotCount, os.Stderr)
+	if err := i.raftJSONPeers.SetPeers(peers); err != nil {
+		return err
+	}
+	snapshots, err := raft.NewFileSnapshotStore(basePath, i.config.Raft.RetainSnapshotCount, os.Stderr)
 	if err != nil {
 		return err
 	}
-	logStore, err := raftboltdb.NewBoltStore(filepath.Join(i.config.BaseDir, "raft.db"))
+	logStore, err := raftboltdb.NewBoltStore(filepath.Join(basePath, "raft.db"))
 	if err != nil {
 		return err
 	}
-	raftClient, err := raft.NewRaft(config, (*fsm)(i), logStore, logStore, snapshots, peerStore, transport)
+	i.raftBoltStore = logStore
+	raftClient, err := raft.NewRaft(config, i, logStore, logStore, snapshots, i.raftJSONPeers, transport)
 	i.raft = raftClient
 	return err
 }
 
-func (i *instance) applyCommand(cmdType CmdType, key, value string) {
-	k := json.RawMessage(key)
-	v := json.RawMessage(value)
-	c := &command{
-		Cmd:   cmdType,
-		Key:   &k,
-		Value: &v,
+func (i *instance) addRaftPeer(peer *Peer) {
+	if i.isLeader() {
+		i.raft.AddPeer(peer.RaftAddr.String()).Error()
 	}
-	b, _ := json.Marshal(c)
-	t, _ := time.ParseDuration(i.config.Raft.Timeout)
-	i.raft.Apply(b, t)
 }
 
-type fsm instance
-
-func (f *fsm) Apply(l *raft.Log) interface{} {
-	return nil
+func (i *instance) removeRaftPeer(peer *Peer) {
+	if i.isLeader() {
+		i.raft.RemovePeer(peer.RaftAddr.String()).Error()
+	}
 }
 
-func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {
-	return nil, nil
-}
-
-func (f *fsm) Restore(rc io.ReadCloser) error {
-	return nil
-}
-
-type fsmSnapshot struct {
-}
-
-func (f *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
-	return nil
-}
-
-func (f *fsmSnapshot) Release() {
-
+func removeOldPeersFile(basePath string) error {
+	if err := os.RemoveAll(basePath); err != nil {
+		return err
+	}
+	return os.MkdirAll(basePath, 0755)
 }

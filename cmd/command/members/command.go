@@ -19,9 +19,10 @@ func (c *Command) readConfig() (*huton.Config, error) {
 	flags.Usage = func() {
 		c.UI.Output(c.Help())
 	}
-	flags.StringVar(&config.Serf.BindAddr, "serfBind", "0.0.0.0", "address to bind serf to")
+	flags.StringVar(&config.Name, "name", "", "unique instnace name")
+	flags.StringVar(&config.Serf.BindAddr, "serfBind", "127.0.0.1", "address to bind serf to")
 	flags.IntVar(&config.Serf.BindPort, "serfPort", 8080, "port to bind serf to")
-	flags.StringVar(&config.Raft.BindAddr, "raftBind", "0.0.0.0", "address to bind raft to")
+	flags.StringVar(&config.Raft.BindAddr, "raftBind", "127.0.0.1", "address to bind raft to")
 	flags.IntVar(&config.Raft.BindPort, "raftPort", 8080, "port to bind raft to")
 	flags.Var((*command.AppendSliceValue)(&config.Peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
@@ -42,11 +43,13 @@ func (c *Command) Run(args []string) int {
 		c.UI.Error(err.Error())
 		return 1
 	}
+	c.UI.Output("Instance created.")
 	defer instance.Close()
-	members := instance.Members()
-	for _, member := range members {
-		c.UI.Output(member)
+	peers := instance.Peers()
+	for _, peer := range peers {
+		c.UI.Output(peer.String())
 	}
+	c.UI.Output("Instance closing")
 	return 0
 }
 

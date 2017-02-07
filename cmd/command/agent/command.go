@@ -2,7 +2,6 @@ package agent
 
 import (
 	"flag"
-	"fmt"
 	"github.com/jonbonazza/huton/cmd/command"
 	"github.com/jonbonazza/huton/lib"
 	"github.com/mitchellh/cli"
@@ -14,6 +13,7 @@ import (
 type Command struct {
 	UI         cli.Ui
 	ShutdownCh <-chan struct{}
+	instance huton.Instance
 }
 
 func (c *Command) readConfig() (*huton.Config, error) {
@@ -22,9 +22,10 @@ func (c *Command) readConfig() (*huton.Config, error) {
 	flags.Usage = func() {
 		c.UI.Output(c.Help())
 	}
-	flags.StringVar(&config.Serf.BindAddr, "serfBind", "0.0.0.0", "address to bind serf to")
+	flags.StringVar(&config.Name, "name", "", "unique instance name")
+	flags.StringVar(&config.Serf.BindAddr, "serfBind", "127.0.0.1", "address to bind serf to")
 	flags.IntVar(&config.Serf.BindPort, "serfPort", 8080, "port to bind serf to")
-	flags.StringVar(&config.Raft.BindAddr, "raftBind", "0.0.0.0", "address to bind raft to")
+	flags.StringVar(&config.Raft.BindAddr, "raftBind", "127.0.0.1", "address to bind raft to")
 	flags.IntVar(&config.Raft.BindPort, "raftPort", 8080, "port to bind raft to")
 	flags.Var((*command.AppendSliceValue)(&config.Peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
@@ -39,8 +40,7 @@ func (c *Command) Run(args []string) int {
 		c.UI.Error(err.Error())
 		return 1
 	}
-	fmt.Println(config)
-	_, err = huton.NewInstance(config)
+	c.instance, err = huton.NewInstance(config)
 	if err != nil {
 		c.UI.Error(err.Error())
 		return 1
@@ -53,8 +53,10 @@ func (c *Command) handleSignals() int {
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-signalCh:
+		c.instance.Close()
 		return 0
 	case <-c.ShutdownCh:
+		c.instance.Close()
 		return 0
 	}
 }
