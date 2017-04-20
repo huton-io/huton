@@ -57,11 +57,11 @@ func (i *instance) setupRaft() error {
 		return err
 	}
 	i.raftBoltStore = logStore
-	//logCache, err := raft.NewLogCache(raftLogCacheSize, logStore)
-	//if err != nil {
-	//	return err
-	//}
-	i.raft, err = raft.NewRaft(i.config.Raft.Config, i, logStore, logStore, snapshots, i.raftJSONPeers, i.raftTransport)
+	logCache, err := raft.NewLogCache(raftLogCacheSize, logStore)
+	if err != nil {
+		return err
+	}
+	i.raft, err = raft.NewRaft(i.config.Raft.Config, i, logCache, logStore, snapshots, i.raftJSONPeers, i.raftTransport)
 	return err
 }
 
