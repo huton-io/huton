@@ -1,0 +1,15 @@
+syntax = "proto2";
+
+package huton_proto;
+
+message Command {
+    required uint32 type = 1;
+    required bytes body = 2;
+}
+
+message Response {
+}
+
+service Reciever {
+    rpc OnCommand (Command) returns (Response) {}
+}

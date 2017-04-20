@@ -1,20 +1,24 @@
 package huton
 
 import (
+	"fmt"
+	"github.com/boltdb/bolt"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 	"github.com/hashicorp/serf/serf"
 	"net"
-	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type Config struct {
-	Serf    *serf.Config
-	Raft    *RaftConfig
-	Peers   []string
-	BaseDir string
+	Serf           *serf.Config
+	Raft           *RaftConfig
+	Peers          []string
+	BaseDir        string
+	CacheDBTimeout string
 }
 
 func DefaultConfig() *Config {
@@ -25,9 +29,9 @@ func DefaultConfig() *Config {
 			RetainSnapshotCount: 2,
 			MaxPool:             3,
 			TransportTimeout:    "10s",
-			Writer:              os.Stdout,
 		},
-		Peers: make([]string, 0),
+		Peers:          make([]string, 0),
+		CacheDBTimeout: "10s",
 	}
 	c.Raft.ShutdownOnRemove = false
 	return c
@@ -47,6 +51,7 @@ type instance struct {
 	raftJSONPeers    *raft.JSONPeers
 	raftBoltStore    *raftboltdb.BoltStore
 	raftTransport    *raft.NetworkTransport
+	cachesDB         *bolt.DB
 	serfEventChannel chan serf.Event
 	shutdownCh       chan struct{}
 	peersMu          sync.Mutex
@@ -66,13 +71,16 @@ func NewInstance(config *Config) (Instance, error) {
 		config:           config,
 		caches:           make(map[string]*Cache),
 	}
+	if err := i.setupCachesDB(); err != nil {
+		return i, err
+	}
 	raftAddr := &net.TCPAddr{
 		IP:   net.ParseIP(config.Serf.MemberlistConfig.BindAddr),
 		Port: config.Serf.MemberlistConfig.BindPort + 1,
 	}
 	if err := i.setupSerf(config.Serf, raftAddr); err != nil {
 		i.Shutdown()
-		return nil, err
+		return i, err
 	}
 	i.peersMu.Lock()
 	members := i.serf.Members()
@@ -80,14 +88,14 @@ func NewInstance(config *Config) (Instance, error) {
 		p, err := newPeer(member)
 		if err != nil {
 			i.Shutdown()
-			return nil, err
+			return i, err
 		}
 		i.peers[p.RaftAddr.String()] = p
 	}
 	i.peersMu.Unlock()
 	if err := i.setupRaft(); err != nil {
 		i.Shutdown()
-		return nil, err
+		return i, err
 	}
 	// Wait for initial leader state
 	for {
@@ -99,13 +107,33 @@ func NewInstance(config *Config) (Instance, error) {
 	return i, nil
 }
 
+func (i *instance) setupCachesDB() error {
+	timeout, err := time.ParseDuration(i.config.CacheDBTimeout)
+	if err != nil {
+		return err
+	}
+	cachesDBFile := filepath.Join(i.config.BaseDir, i.config.Serf.NodeName, "caches.db")
+	cachesDB, err := bolt.Open(cachesDBFile, 0644, &bolt.Options{
+		Timeout: timeout,
+	})
+	if err != nil {
+		return fmt.Errorf("Failed to open caches DB file %s: %s", cachesDBFile, err)
+	}
+	i.cachesDB = cachesDB
+	return nil
+}
+
 func (i *instance) Cache(name string) (*Cache, error) {
 	i.cacheMu.Lock()
 	defer i.cacheMu.Unlock()
 	if c, ok := i.caches[name]; ok {
 		return c, nil
 	}
-	return newCache(i.config.BaseDir, name, i)
+	timeout, err := time.ParseDuration(i.config.CacheDBTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to partion duration %s: %s", i.config.CacheDBTimeout, err)
+	}
+	return newCache(i.cachesDB, name, i, timeout)
 }
 
 func (i *instance) Shutdown() error {
@@ -126,6 +154,11 @@ func (i *instance) Shutdown() error {
 	}
 	if i.raft != nil {
 		if err := i.raft.Shutdown().Error(); err != nil {
+			return err
+		}
+	}
+	if i.cachesDB != nil {
+		if err := i.cachesDB.Close(); err != nil {
 			return err
 		}
 	}

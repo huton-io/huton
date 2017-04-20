@@ -4,7 +4,6 @@ import (
 	"errors"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,10 +16,10 @@ const (
 
 type RaftConfig struct {
 	*raft.Config        `json:",inline" yaml:",inline"`
+	ApplicationRetries  int    `json:"applicationRetries" yaml:"applicationRetries"`
 	RetainSnapshotCount int    `json:"retainSnapshotCount" yaml:"retainSnapshotCount"`
 	MaxPool             int    `json:"maxPool" yaml:"maxPool"`
 	TransportTimeout    string `json:"transportTimeout" yaml:"transportTimeout"`
-	Writer              io.Writer
 }
 
 func (i *instance) setupRaft() error {
@@ -32,7 +31,7 @@ func (i *instance) setupRaft() error {
 		IP:   net.ParseIP(i.config.Serf.MemberlistConfig.BindAddr),
 		Port: i.config.Serf.MemberlistConfig.BindPort + 1,
 	}
-	i.raftTransport, err = raft.NewTCPTransport(addr.String(), addr, i.config.Raft.MaxPool, t, i.config.Raft.Writer)
+	i.raftTransport, err = raft.NewTCPTransport(addr.String(), addr, i.config.Raft.MaxPool, t, i.config.Raft.LogOutput)
 	if err != nil {
 		return err
 	}

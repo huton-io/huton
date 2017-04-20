@@ -1,7 +1,6 @@
 package huton
 
 import (
-	"fmt"
 	"github.com/hashicorp/serf/serf"
 	"net"
 	"strconv"
@@ -43,7 +42,6 @@ func (i *instance) peerJoined(event serf.MemberEvent) {
 			i.peersMu.Lock()
 			var exists bool
 			if _, exists = i.peers[peer.ID]; !exists {
-				fmt.Println("Added Peer " + peer.ID)
 				i.peers[peer.ID] = peer
 			}
 			i.peersMu.Unlock()
