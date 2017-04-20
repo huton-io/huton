@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/jonbonazza/huton/command/agent"
 	"github.com/jonbonazza/huton/command/members"
+	"github.com/jonbonazza/huton/command/put"
 	"github.com/mitchellh/cli"
 	"os"
 )
@@ -21,6 +22,11 @@ func Commands() map[string]cli.CommandFactory {
 		},
 		"members": func() (cli.Command, error) {
 			return &members.Command{
+				UI: ui,
+			}, nil
+		},
+		"put": func() (cli.Command, error) {
+			return &put.Command{
 				UI: ui,
 			}, nil
 		},
