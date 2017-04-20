@@ -23,8 +23,8 @@ func (c *Command) readConfig() (*huton.Config, error) {
 		c.UI.Output(c.Help())
 	}
 	flags.StringVar(&config.Serf.NodeName, "name", "", "unique instance name")
-	flags.StringVar(&config.Serf.MemberlistConfig.BindAddr, "serfBind", "127.0.0.1", "address to bind serf to")
-	flags.IntVar(&config.Serf.MemberlistConfig.BindPort, "serfPort", 8080, "port to bind serf to")
+	flags.StringVar(&config.Serf.MemberlistConfig.BindAddr, "bindAddr", "127.0.0.1", "address to bind serf to")
+	flags.IntVar(&config.Serf.MemberlistConfig.BindPort, "bindPort", 8080, "port to bind serf to")
 	flags.Var((*command.AppendSliceValue)(&config.Peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		return nil, err
