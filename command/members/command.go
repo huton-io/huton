@@ -46,7 +46,7 @@ func (c *Command) readConfig() (*huton.Config, error) {
 	config.Raft.LogOutput = ioutil.Discard
 	config.Serf.LogOutput = ioutil.Discard
 	config.Serf.MemberlistConfig.LogOutput = ioutil.Discard
-	flags := flag.NewFlagSet("members", flag.ContinueOnError)
+	flags := flag.NewFlagSet("members", flag.ExitOnError)
 	flags.Usage = func() {
 		c.UI.Error(c.Help())
 	}
