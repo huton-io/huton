@@ -1,62 +1,49 @@
 package huton
 
 import (
+	"errors"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"time"
-	"errors"
-	"fmt"
+)
+
+const (
+	raftLogCacheSize = 512
 )
 
 type RaftConfig struct {
-	BindAddr            string `json:"bindAddr" yaml:"bindAddr"`
-	BindPort            int    `json:"bindPort" yaml:"bindPort"`
+	*raft.Config        `json:",inline" yaml:",inline"`
 	RetainSnapshotCount int    `json:"retainSnapshotCount" yaml:"retainSnapshotCount"`
 	MaxPool             int    `json:"maxPool" yaml:"maxPool"`
-	Timeout             string `json:"timeout" yaml:"timeout"`
-}
-
-func (c *RaftConfig) Addr() (*net.TCPAddr, error) {
-	return net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", c.BindAddr, c.BindPort))
+	TransportTimeout    string `json:"transportTimeout" yaml:"transportTimeout"`
+	Writer              io.Writer
 }
 
 func (i *instance) setupRaft() error {
-	addr, err := i.config.Raft.Addr()
+	t, err := time.ParseDuration(i.config.Raft.TransportTimeout)
 	if err != nil {
 		return err
 	}
-	config := raft.DefaultConfig()
-	config.ShutdownOnRemove = false
-	t, err := time.ParseDuration(i.config.Raft.Timeout)
-	if err != nil {
-		return err
+	addr := &net.TCPAddr{
+		IP:   net.ParseIP(i.config.Serf.MemberlistConfig.BindAddr),
+		Port: i.config.Serf.MemberlistConfig.BindPort + 1,
 	}
-	transport, err := raft.NewTCPTransport(addr.String(), addr, i.config.Raft.MaxPool, t, os.Stderr)
+	i.raftTransport, err = raft.NewTCPTransport(addr.String(), addr, i.config.Raft.MaxPool, t, i.config.Raft.Writer)
 	if err != nil {
 		return err
 	}
 	if i.id == "" {
 		return errors.New("No instance id provided.")
 	}
-	basePath := filepath.Join(i.config.BaseDir, i.config.Name)
-	if err := removeOldPeersFile(basePath); err != nil {
-		return err
-	}
-	i.raftJSONPeers = raft.NewJSONPeers(basePath, transport)
+	basePath := filepath.Join(i.config.BaseDir, i.config.Serf.NodeName)
+	i.raftJSONPeers = raft.NewJSONPeers(basePath, i.raftTransport)
 	var peers []string
-	for _, member := range i.serf.Members() {
-		peer, err := newPeer(member)
-		if err != nil {
-			return err
-		}
+	for _, peer := range i.peers {
 		peers = append(peers, peer.RaftAddr.String())
-	}
-	if len(peers) <= 1 {
-		config.EnableSingleNode = true
-		config.DisableBootstrapAfterElect = false
 	}
 	if err := i.raftJSONPeers.SetPeers(peers); err != nil {
 		return err
@@ -70,26 +57,24 @@ func (i *instance) setupRaft() error {
 		return err
 	}
 	i.raftBoltStore = logStore
-	raftClient, err := raft.NewRaft(config, i, logStore, logStore, snapshots, i.raftJSONPeers, transport)
-	i.raft = raftClient
+	//logCache, err := raft.NewLogCache(raftLogCacheSize, logStore)
+	//if err != nil {
+	//	return err
+	//}
+	i.raft, err = raft.NewRaft(i.config.Raft.Config, i, logStore, logStore, snapshots, i.raftJSONPeers, i.raftTransport)
 	return err
 }
 
-func (i *instance) addRaftPeer(peer *Peer) {
-	if i.isLeader() {
-		i.raft.AddPeer(peer.RaftAddr.String()).Error()
+func (i *instance) addRaftPeer(peer *Peer) error {
+	if !i.isLeader() {
+		return nil
 	}
+	return i.raft.AddPeer(peer.RaftAddr.String()).Error()
 }
 
-func (i *instance) removeRaftPeer(peer *Peer) {
-	if i.isLeader() {
-		i.raft.RemovePeer(peer.RaftAddr.String()).Error()
+func (i *instance) removeRaftPeer(peer *Peer) error {
+	if !i.isLeader() {
+		return nil
 	}
-}
-
-func removeOldPeersFile(basePath string) error {
-	if err := os.RemoveAll(basePath); err != nil {
-		return err
-	}
-	return os.MkdirAll(basePath, 0755)
+	return i.raft.RemovePeer(peer.RaftAddr.String()).Error()
 }

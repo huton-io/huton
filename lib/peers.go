@@ -1,16 +1,17 @@
 package huton
 
 import (
+	"encoding/json"
 	"github.com/hashicorp/serf/serf"
 	"net"
 	"strconv"
-	"encoding/json"
 )
 
 type Peer struct {
 	ID       string
 	SerfAddr *net.TCPAddr
 	RaftAddr *net.TCPAddr
+	RPCAddr  *net.TCPAddr
 }
 
 func (p *Peer) String() string {

@@ -7,35 +7,22 @@ import (
 	"strconv"
 )
 
-type SerfConfig struct {
-	BindAddr string `json:"bindAddr" yaml:"bindAddr"`
-	BindPort int    `json:"bindPort" yaml:"bindPort"`
-}
-
-func (c *SerfConfig) Addr() (*net.TCPAddr, error) {
-	return net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", c.BindAddr, c.BindPort))
-}
-
-func (i *instance) setupSerf(addr *net.TCPAddr) error {
-	config := serf.DefaultConfig()
-	config.Init()
-	config.MemberlistConfig.BindAddr = addr.IP.String()
-	config.MemberlistConfig.BindPort = addr.Port
-	config.NodeName = fmt.Sprintf("%s:%d", config.MemberlistConfig.BindAddr, config.MemberlistConfig.BindPort)
-	fmt.Println(config.NodeName)
-	fmt.Println(config.NodeName)
-	config.Tags["id"] = config.NodeName
-	config.Tags["raftIP"] = i.config.Raft.BindAddr
-	config.Tags["raftPort"] = strconv.Itoa(i.config.Raft.BindPort)
-	config.EventCh = i.serfEventChannel
-	config.EnableNameConflictResolution = false
-	s, err := serf.Create(config)
+func (i *instance) setupSerf(serfConfig *serf.Config, raftAddr *net.TCPAddr) error {
+	serfConfig.EventCh = i.serfEventChannel
+	tags := make(map[string]string)
+	tags["id"] = serfConfig.NodeName
+	tags["raftIP"] = raftAddr.IP.String()
+	tags["raftPort"] = strconv.Itoa(raftAddr.Port)
+	serfConfig.Tags = tags
+	s, err := serf.Create(serfConfig)
 	if err != nil {
 		return err
 	}
 	i.serf = s
 	if len(i.config.Peers) > 0 {
-		s.Join(i.config.Peers, true)
+		if _, err := s.Join(i.config.Peers, true); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -54,9 +41,15 @@ func (i *instance) peerJoined(event serf.MemberEvent) {
 		peer, err := newPeer(member)
 		if err == nil {
 			i.peersMu.Lock()
-			i.peers[peer.ID] = peer
+			var exists bool
+			if _, exists = i.peers[peer.ID]; !exists {
+				fmt.Println("Added Peer " + peer.ID)
+				i.peers[peer.ID] = peer
+			}
 			i.peersMu.Unlock()
-			i.addRaftPeer(peer)
+			if !exists {
+				i.addRaftPeer(peer)
+			}
 		}
 	}
 }

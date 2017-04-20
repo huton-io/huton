@@ -19,16 +19,14 @@ func (c *Command) readConfig() (*huton.Config, error) {
 	flags.Usage = func() {
 		c.UI.Output(c.Help())
 	}
-	flags.StringVar(&config.Name, "name", "", "unique instnace name")
-	flags.StringVar(&config.Serf.BindAddr, "serfBind", "127.0.0.1", "address to bind serf to")
-	flags.IntVar(&config.Serf.BindPort, "serfPort", 8080, "port to bind serf to")
-	flags.StringVar(&config.Raft.BindAddr, "raftBind", "127.0.0.1", "address to bind raft to")
-	flags.IntVar(&config.Raft.BindPort, "raftPort", 8080, "port to bind raft to")
+	flags.StringVar(&config.Serf.NodeName, "name", "", "unique instnace name")
+	flags.StringVar(&config.Serf.MemberlistConfig.BindAddr, "serfBind", "127.0.0.1", "address to bind serf to")
+	flags.IntVar(&config.Serf.MemberlistConfig.BindPort, "serfPort", 8080, "port to bind serf to")
 	flags.Var((*command.AppendSliceValue)(&config.Peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		return nil, err
 	}
-	return &config, nil
+	return config, nil
 }
 
 func (c *Command) Run(args []string) int {
@@ -44,7 +42,7 @@ func (c *Command) Run(args []string) int {
 		return 1
 	}
 	c.UI.Output("Instance created.")
-	defer instance.Close()
+	defer instance.Shutdown()
 	peers := instance.Peers()
 	for _, peer := range peers {
 		c.UI.Output(peer.String())
