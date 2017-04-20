@@ -6,7 +6,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/jonbonazza/huton/lib/proto"
 	"sync"
-	"time"
 )
 
 type Cache struct {
@@ -14,10 +13,9 @@ type Cache struct {
 	db       *bolt.DB
 	name     string
 	instance *instance
-	timeout  time.Duration
 }
 
-func newCache(cachesDB *bolt.DB, name string, instance *instance, timeout time.Duration) (*Cache, error) {
+func newCache(cachesDB *bolt.DB, name string, instance *instance) (*Cache, error) {
 	err := cachesDB.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucket([]byte(name))
 		if err == bolt.ErrBucketExists {
@@ -29,7 +27,6 @@ func newCache(cachesDB *bolt.DB, name string, instance *instance, timeout time.D
 		db:       cachesDB,
 		name:     name,
 		instance: instance,
-		timeout:  timeout,
 	}, err
 }
 
@@ -60,11 +57,7 @@ func (c *Cache) Set(key, value []byte) error {
 		Type: &t,
 		Body: b,
 	}
-	b, err = proto.Marshal(cmd)
-	if err != nil {
-		return fmt.Errorf("Failed to marshal command to protobuf when setting value in cache %s: %s", c.name, err)
-	}
-	return c.instance.raft.Apply(b, c.timeout).Error()
+	return c.instance.apply(cmd)
 }
 
 func (c *Cache) set(key, value []byte) error {
@@ -90,12 +83,7 @@ func (c *Cache) Delete(key []byte) error {
 		Type: &t,
 		Body: b,
 	}
-	b, err = proto.Marshal(cmd)
-	if err != nil {
-		return fmt.Errorf("Failed to marshal command to protobuf when deleting value from cache %s: %s", c.name, err)
-	}
-	c.instance.raft.Apply(b, c.timeout)
-	return nil
+	return c.instance.apply(cmd)
 }
 
 func (c *Cache) delete(key []byte) error {

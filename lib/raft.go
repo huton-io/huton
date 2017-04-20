@@ -2,8 +2,10 @@ package huton
 
 import (
 	"errors"
+	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
+	"github.com/jonbonazza/huton/lib/proto"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,6 +19,7 @@ const (
 type RaftConfig struct {
 	*raft.Config        `json:",inline" yaml:",inline"`
 	ApplicationRetries  int    `json:"applicationRetries" yaml:"applicationRetries"`
+	ApplicationTimeout  string `json:"applicationTimeout" yaml:"applicationTimeout"`
 	RetainSnapshotCount int    `json:"retainSnapshotCount" yaml:"retainSnapshotCount"`
 	MaxPool             int    `json:"maxPool" yaml:"maxPool"`
 	TransportTimeout    string `json:"transportTimeout" yaml:"transportTimeout"`
@@ -76,4 +79,25 @@ func (i *instance) removeRaftPeer(peer *Peer) error {
 		return nil
 	}
 	return i.raft.RemovePeer(peer.RaftAddr.String()).Error()
+}
+
+func (i *instance) apply(cmd *huton_proto.Command) error {
+	if i.raft == nil {
+		return nil
+	}
+	if !i.isLeader() {
+		leader := i.raft.Leader()
+		i.peersMu.Lock()
+		defer i.peersMu.Unlock()
+		return i.sendCommand(i.peers[leader], cmd)
+	}
+	b, err := proto.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+	timeout, err := time.ParseDuration(i.config.Raft.ApplicationTimeout)
+	if err != nil {
+		return err
+	}
+	return i.raft.Apply(b, timeout).Error()
 }

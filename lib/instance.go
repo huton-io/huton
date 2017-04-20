@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 	"github.com/hashicorp/serf/serf"
+	"google.golang.org/grpc"
 	"net"
 	"path/filepath"
 	"strconv"
@@ -29,6 +30,7 @@ func DefaultConfig() *Config {
 			RetainSnapshotCount: 2,
 			MaxPool:             3,
 			TransportTimeout:    "10s",
+			ApplicationTimeout:  "10s",
 		},
 		Peers:          make([]string, 0),
 		CacheDBTimeout: "10s",
@@ -52,6 +54,8 @@ type instance struct {
 	raftBoltStore    *raftboltdb.BoltStore
 	raftTransport    *raft.NetworkTransport
 	cachesDB         *bolt.DB
+	rpcListener      net.Listener
+	rpc              *grpc.Server
 	serfEventChannel chan serf.Event
 	shutdownCh       chan struct{}
 	peersMu          sync.Mutex
@@ -74,11 +78,16 @@ func NewInstance(config *Config) (Instance, error) {
 	if err := i.setupCachesDB(); err != nil {
 		return i, err
 	}
+	ip := net.ParseIP(config.Serf.MemberlistConfig.BindAddr)
 	raftAddr := &net.TCPAddr{
-		IP:   net.ParseIP(config.Serf.MemberlistConfig.BindAddr),
+		IP:   ip,
 		Port: config.Serf.MemberlistConfig.BindPort + 1,
 	}
-	if err := i.setupSerf(config.Serf, raftAddr); err != nil {
+	rpcAddr := &net.TCPAddr{
+		IP:   ip,
+		Port: config.Serf.MemberlistConfig.BindPort + 2,
+	}
+	if err := i.setupSerf(config.Serf, raftAddr, rpcAddr); err != nil {
 		i.Shutdown()
 		return i, err
 	}
@@ -94,6 +103,10 @@ func NewInstance(config *Config) (Instance, error) {
 	}
 	i.peersMu.Unlock()
 	if err := i.setupRaft(); err != nil {
+		i.Shutdown()
+		return i, err
+	}
+	if err := i.setupRPC(); err != nil {
 		i.Shutdown()
 		return i, err
 	}
@@ -129,11 +142,7 @@ func (i *instance) Cache(name string) (*Cache, error) {
 	if c, ok := i.caches[name]; ok {
 		return c, nil
 	}
-	timeout, err := time.ParseDuration(i.config.CacheDBTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to partion duration %s: %s", i.config.CacheDBTimeout, err)
-	}
-	return newCache(i.cachesDB, name, i, timeout)
+	return newCache(i.cachesDB, name, i)
 }
 
 func (i *instance) Shutdown() error {
@@ -154,6 +163,11 @@ func (i *instance) Shutdown() error {
 	}
 	if i.raft != nil {
 		if err := i.raft.Shutdown().Error(); err != nil {
+			return err
+		}
+	}
+	if i.rpcListener != nil {
+		if err := i.rpcListener.Close(); err != nil {
 			return err
 		}
 	}

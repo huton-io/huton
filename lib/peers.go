@@ -24,6 +24,10 @@ func newPeer(member serf.Member) (*Peer, error) {
 	if err != nil {
 		return nil, err
 	}
+	rpcPort, err := strconv.Atoi(member.Tags["rpcPort"])
+	if err != nil {
+		return nil, err
+	}
 	return &Peer{
 		ID: member.Tags["id"],
 		SerfAddr: &net.TCPAddr{
@@ -33,6 +37,10 @@ func newPeer(member serf.Member) (*Peer, error) {
 		RaftAddr: &net.TCPAddr{
 			IP:   net.ParseIP(member.Tags["raftIP"]),
 			Port: raftPort,
+		},
+		RPCAddr: &net.TCPAddr{
+			IP:   net.ParseIP(member.Tags["rpcIP"]),
+			Port: rpcPort,
 		},
 	}, nil
 }
@@ -50,5 +58,10 @@ func (i *instance) Peers() []*Peer {
 func (i *instance) Local() *Peer {
 	i.peersMu.Lock()
 	defer i.peersMu.Unlock()
-	return i.peers[i.id]
+	for _, p := range i.peers {
+		if p.ID == i.id {
+			return p
+		}
+	}
+	return nil
 }

@@ -6,12 +6,14 @@ import (
 	"strconv"
 )
 
-func (i *instance) setupSerf(serfConfig *serf.Config, raftAddr *net.TCPAddr) error {
+func (i *instance) setupSerf(serfConfig *serf.Config, raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) error {
 	serfConfig.EventCh = i.serfEventChannel
 	tags := make(map[string]string)
 	tags["id"] = serfConfig.NodeName
 	tags["raftIP"] = raftAddr.IP.String()
 	tags["raftPort"] = strconv.Itoa(raftAddr.Port)
+	tags["rpcIP"] = rpcAddr.IP.String()
+	tags["rpcPort"] = strconv.Itoa(rpcAddr.Port)
 	serfConfig.Tags = tags
 	s, err := serf.Create(serfConfig)
 	if err != nil {
@@ -40,9 +42,10 @@ func (i *instance) peerJoined(event serf.MemberEvent) {
 		peer, err := newPeer(member)
 		if err == nil {
 			i.peersMu.Lock()
+			raftAddr := peer.RaftAddr.String()
 			var exists bool
-			if _, exists = i.peers[peer.ID]; !exists {
-				i.peers[peer.ID] = peer
+			if _, exists = i.peers[raftAddr]; !exists {
+				i.peers[raftAddr] = peer
 			}
 			i.peersMu.Unlock()
 			if !exists {
@@ -57,7 +60,7 @@ func (i *instance) peerGone(event serf.MemberEvent) {
 		peer, err := newPeer(member)
 		if err == nil {
 			i.peersMu.Lock()
-			delete(i.peers, peer.ID)
+			delete(i.peers, peer.RaftAddr.String())
 			i.peersMu.Unlock()
 			i.removeRaftPeer(peer)
 		}
