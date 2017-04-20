@@ -39,7 +39,7 @@ func (c *Cache) Get(key []byte) ([]byte, error) {
 		b = bucket.Get(key)
 		return nil
 	})
-	return b, fmt.Errorf("Failed to get key %s from cache %s: %s", string(key), c.name, err)
+	return b, err
 }
 
 func (c *Cache) Set(key, value []byte) error {
