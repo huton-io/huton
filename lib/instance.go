@@ -14,6 +14,9 @@ import (
 	"time"
 )
 
+// Config provides configuration to a Huton instance. It is composed of Serf and Raft configs, as well as some
+// huton-specific configurations. A few of the 3rd party configurations are ignored, such as Serf.EventCh, but most
+// all of it is used.
 type Config struct {
 	Serf           *serf.Config
 	Raft           *RaftConfig
@@ -22,6 +25,7 @@ type Config struct {
 	CacheDBTimeout string
 }
 
+// DefaultConfig creates a Config instance initialized with default values.
 func DefaultConfig() *Config {
 	c := &Config{
 		Serf: serf.DefaultConfig(),
@@ -39,10 +43,15 @@ func DefaultConfig() *Config {
 	return c
 }
 
+// Instance is an interface for the Huton instance.
 type Instance interface {
-	Cache(name string) (*Cache, error)
+	// Cache returns the off-heap cache with the given name. If the cache doesn't exist, it is automatically created.
+	Cache(name string) (Cache, error)
+	// Peers returns the current list of cluster peers. The list includes the local peer.
 	Peers() []*Peer
+	// Local returns the local peer.
 	Local() *Peer
+	// Shutdown gracefully shuts down the instance.
 	Shutdown() error
 }
 
@@ -62,9 +71,55 @@ type instance struct {
 	peers            map[string]*Peer
 	cacheMu          sync.Mutex
 	config           *Config
-	caches           map[string]*Cache
+	caches           map[string]*cache
 }
 
+func (i *instance) Cache(name string) (Cache, error) {
+	i.cacheMu.Lock()
+	defer i.cacheMu.Unlock()
+	if c, ok := i.caches[name]; ok {
+		return c, nil
+	}
+	return newCache(i.cachesDB, name, i)
+}
+
+func (i *instance) Shutdown() error {
+	if i.serf != nil {
+		if err := i.serf.Leave(); err != nil {
+			return err
+		}
+	}
+	if i.raftBoltStore != nil {
+		if err := i.raftBoltStore.Close(); err != nil {
+			return err
+		}
+	}
+	if i.raftTransport != nil {
+		if err := i.raftTransport.Close(); err != nil {
+			return err
+		}
+	}
+	if i.raft != nil {
+		if err := i.raft.Shutdown().Error(); err != nil {
+			return err
+		}
+	}
+	if i.rpcListener != nil {
+		if err := i.rpcListener.Close(); err != nil {
+			return err
+		}
+	}
+	if i.cachesDB != nil {
+		if err := i.cachesDB.Close(); err != nil {
+			return err
+		}
+	}
+	close(i.shutdownCh)
+	return nil
+}
+
+// NewInstance creates a new Huton instance and initailizes it and all of its subcomponents, such as Serf, Raft, and GRPC server, with the provided configuration.
+// If this function returns successfully, the instance should be considered started and ready for use.
 func NewInstance(config *Config) (Instance, error) {
 	host := net.JoinHostPort(config.Serf.MemberlistConfig.BindAddr, strconv.Itoa(config.Serf.MemberlistConfig.BindPort))
 	i := &instance{
@@ -73,7 +128,7 @@ func NewInstance(config *Config) (Instance, error) {
 		shutdownCh:       make(chan struct{}),
 		peers:            make(map[string]*Peer),
 		config:           config,
-		caches:           make(map[string]*Cache),
+		caches:           make(map[string]*cache),
 	}
 	if err := i.setupCachesDB(); err != nil {
 		return i, err
@@ -133,50 +188,6 @@ func (i *instance) setupCachesDB() error {
 		return fmt.Errorf("Failed to open caches DB file %s: %s", cachesDBFile, err)
 	}
 	i.cachesDB = cachesDB
-	return nil
-}
-
-func (i *instance) Cache(name string) (*Cache, error) {
-	i.cacheMu.Lock()
-	defer i.cacheMu.Unlock()
-	if c, ok := i.caches[name]; ok {
-		return c, nil
-	}
-	return newCache(i.cachesDB, name, i)
-}
-
-func (i *instance) Shutdown() error {
-	if i.serf != nil {
-		if err := i.serf.Leave(); err != nil {
-			return err
-		}
-	}
-	if i.raftBoltStore != nil {
-		if err := i.raftBoltStore.Close(); err != nil {
-			return err
-		}
-	}
-	if i.raftTransport != nil {
-		if err := i.raftTransport.Close(); err != nil {
-			return err
-		}
-	}
-	if i.raft != nil {
-		if err := i.raft.Shutdown().Error(); err != nil {
-			return err
-		}
-	}
-	if i.rpcListener != nil {
-		if err := i.rpcListener.Close(); err != nil {
-			return err
-		}
-	}
-	if i.cachesDB != nil {
-		if err := i.cachesDB.Close(); err != nil {
-			return err
-		}
-	}
-	close(i.shutdownCh)
 	return nil
 }
 

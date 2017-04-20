@@ -54,12 +54,13 @@ func (c *Command) Run(args []string) int {
 		c.UI.Error(fmt.Sprintf("Failed to get cache with name %s: %s", cacheName, err))
 		return 1
 	}
-	b, err := cache.Get([]byte(key))
+	err = cache.Get([]byte(key), func(val []byte) {
+		fmt.Println(string(val))
+	})
 	if err != nil {
 		c.UI.Error(fmt.Sprintf("Failed to get value in cache: %s", err))
 		return 1
 	}
-	fmt.Println(string(b))
 	return 0
 }
 

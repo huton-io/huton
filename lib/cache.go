@@ -5,17 +5,25 @@ import (
 	"github.com/boltdb/bolt"
 	"github.com/golang/protobuf/proto"
 	"github.com/jonbonazza/huton/lib/proto"
-	"sync"
 )
 
-type Cache struct {
-	mu       sync.RWMutex
+// Cache is an interface for a cache, providing basic caching operations
+type Cache interface {
+	// Get retrieves the entry with the given key from the cache, if one exists and calls f, passing in the value.
+	Get(key []byte, f func(val []byte)) error
+	// Set puts a key-value-pair into the cache. If an entry with key already exists, it is overwritten.
+	Set(key, value []byte) error
+	// Delete deletes an entry with the given key from the cache, if one exists.
+	Delete(key []byte) error
+}
+
+type cache struct {
 	db       *bolt.DB
 	name     string
 	instance *instance
 }
 
-func newCache(cachesDB *bolt.DB, name string, instance *instance) (*Cache, error) {
+func newCache(cachesDB *bolt.DB, name string, instance *instance) (Cache, error) {
 	err := cachesDB.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucket([]byte(name))
 		if err == bolt.ErrBucketExists {
@@ -23,26 +31,24 @@ func newCache(cachesDB *bolt.DB, name string, instance *instance) (*Cache, error
 		}
 		return err
 	})
-	return &Cache{
+	return &cache{
 		db:       cachesDB,
 		name:     name,
 		instance: instance,
 	}, err
 }
 
-func (c *Cache) Get(key []byte) ([]byte, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	var b []byte
+func (c *cache) Get(key []byte, f func(val []byte)) error {
 	err := c.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(c.name))
-		b = bucket.Get(key)
+		b := bucket.Get(key)
+		f(b)
 		return nil
 	})
-	return b, err
+	return err
 }
 
-func (c *Cache) Set(key, value []byte) error {
+func (c *cache) Set(key, value []byte) error {
 	putCmd := &huton_proto.CachePutCommand{
 		CacheName: &c.name,
 		Key:       key,
@@ -60,16 +66,14 @@ func (c *Cache) Set(key, value []byte) error {
 	return c.instance.apply(cmd)
 }
 
-func (c *Cache) set(key, value []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *cache) set(key, value []byte) error {
 	return c.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(c.name))
 		return bucket.Put(key, value)
 	})
 }
 
-func (c *Cache) Delete(key []byte) error {
+func (c *cache) Delete(key []byte) error {
 	delCmd := &huton_proto.CacheDeleteCommand{
 		CacheName: &c.name,
 		Key:       key,
@@ -86,9 +90,7 @@ func (c *Cache) Delete(key []byte) error {
 	return c.instance.apply(cmd)
 }
 
-func (c *Cache) delete(key []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *cache) delete(key []byte) error {
 	return c.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(c.name))
 		return bucket.Delete(key)

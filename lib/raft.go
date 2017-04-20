@@ -16,6 +16,7 @@ const (
 	raftLogCacheSize = 512
 )
 
+// RaftConfig provides configuration options for the Raft server.
 type RaftConfig struct {
 	*raft.Config        `json:",inline" yaml:",inline"`
 	ApplicationRetries  int    `json:"applicationRetries" yaml:"applicationRetries"`
@@ -39,7 +40,7 @@ func (i *instance) setupRaft() error {
 		return err
 	}
 	if i.id == "" {
-		return errors.New("No instance id provided.")
+		return errors.New("No instance id provided")
 	}
 	basePath := filepath.Join(i.config.BaseDir, i.config.Serf.NodeName)
 	i.raftJSONPeers = raft.NewJSONPeers(basePath, i.raftTransport)
@@ -85,6 +86,7 @@ func (i *instance) apply(cmd *huton_proto.Command) error {
 	if i.raft == nil {
 		return nil
 	}
+	// Only the leader can commit raft logs, so if we aren't the leader, we need to forward it to him.
 	if !i.isLeader() {
 		leader := i.raft.Leader()
 		i.peersMu.Lock()

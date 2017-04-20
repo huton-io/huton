@@ -7,6 +7,7 @@ import (
 	"strconv"
 )
 
+// Peer contains information about a cluster member.
 type Peer struct {
 	ID       string
 	SerfAddr *net.TCPAddr
