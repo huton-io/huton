@@ -62,6 +62,7 @@ type instance struct {
 	raftJSONPeers    *raft.JSONPeers
 	raftBoltStore    *raftboltdb.BoltStore
 	raftTransport    *raft.NetworkTransport
+	cachesDBFilePath string
 	cachesDB         *bolt.DB
 	rpcListener      net.Listener
 	rpc              *grpc.Server
@@ -129,6 +130,7 @@ func NewInstance(config *Config) (Instance, error) {
 		peers:            make(map[string]*Peer),
 		config:           config,
 		caches:           make(map[string]*cache),
+		cachesDBFilePath: filepath.Join(config.BaseDir, config.Serf.NodeName, "caches.db"),
 	}
 	if err := i.setupCachesDB(); err != nil {
 		return i, err
@@ -180,12 +182,11 @@ func (i *instance) setupCachesDB() error {
 	if err != nil {
 		return err
 	}
-	cachesDBFile := filepath.Join(i.config.BaseDir, i.config.Serf.NodeName, "caches.db")
-	cachesDB, err := bolt.Open(cachesDBFile, 0644, &bolt.Options{
+	cachesDB, err := bolt.Open(i.cachesDBFilePath, 0644, &bolt.Options{
 		Timeout: timeout,
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to open caches DB file %s: %s", cachesDBFile, err)
+		return fmt.Errorf("Failed to open caches DB file %s: %s", i.cachesDBFilePath, err)
 	}
 	i.cachesDB = cachesDB
 	return nil

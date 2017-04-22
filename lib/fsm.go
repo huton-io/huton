@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/jonbonazza/huton/lib/proto"
 	"io"
+	"os"
 )
 
 const (
@@ -70,6 +71,25 @@ func (i *instance) Snapshot() (raft.FSMSnapshot, error) {
 }
 
 func (i *instance) Restore(rc io.ReadCloser) error {
+	if i.cachesDB != nil {
+		if err := i.cachesDB.Close(); err != nil {
+			return err
+		}
+	}
+	if err := func() error {
+		f, err := os.OpenFile(i.cachesDBFilePath, os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = io.Copy(f, rc)
+		return err
+	}(); err != nil {
+		return err
+	}
+	if err := i.setupCachesDB(); err != nil {
+		return err
+	}
 	return nil
 }
 
