@@ -45,8 +45,9 @@ func DefaultConfig() *Config {
 
 // Instance is an interface for the Huton instance.
 type Instance interface {
-	// Cache returns the off-heap cache with the given name. If the cache doesn't exist, it is automatically created.
-	Cache(name string) (Cache, error)
+	// Bucket returns the bucket in the off-heap database with the given name.
+	// If the bucket doesn't exist, it is automatically created.
+	Bucket(name string) (Bucket, error)
 	// Peers returns the current list of cluster peers. The list includes the local peer.
 	Peers() []*Peer
 	// Local returns the local peer.
@@ -72,16 +73,16 @@ type instance struct {
 	peers            map[string]*Peer
 	cacheMu          sync.Mutex
 	config           *Config
-	caches           map[string]*cache
+	caches           map[string]*bucket
 }
 
-func (i *instance) Cache(name string) (Cache, error) {
+func (i *instance) Bucket(name string) (Bucket, error) {
 	i.cacheMu.Lock()
 	defer i.cacheMu.Unlock()
 	if c, ok := i.caches[name]; ok {
 		return c, nil
 	}
-	return newCache(i.cachesDB, name, i)
+	return newBucket(i.cachesDB, name, i)
 }
 
 func (i *instance) Shutdown() error {
@@ -119,7 +120,9 @@ func (i *instance) Shutdown() error {
 	return nil
 }
 
-// NewInstance creates a new Huton instance and initailizes it and all of its subcomponents, such as Serf, Raft, and GRPC server, with the provided configuration.
+// NewInstance creates a new Huton instance and initializes it and all of its sub-components, such as Serf, Raft, and
+// GRPC server, with the provided configuration.
+//
 // If this function returns successfully, the instance should be considered started and ready for use.
 func NewInstance(config *Config) (Instance, error) {
 	host := net.JoinHostPort(config.Serf.MemberlistConfig.BindAddr, strconv.Itoa(config.Serf.MemberlistConfig.BindPort))
@@ -129,7 +132,7 @@ func NewInstance(config *Config) (Instance, error) {
 		shutdownCh:       make(chan struct{}),
 		peers:            make(map[string]*Peer),
 		config:           config,
-		caches:           make(map[string]*cache),
+		caches:           make(map[string]*bucket),
 		cachesDBFilePath: filepath.Join(config.BaseDir, config.Serf.NodeName, "caches.db"),
 	}
 	if err := i.setupCachesDB(); err != nil {

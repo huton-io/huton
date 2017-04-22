@@ -46,8 +46,8 @@ func (i *instance) applyCommand(cmd *huton_proto.Command) {
 
 func (i *instance) applyCachePut(cmd *huton_proto.CachePutCommand) {
 	for j := 0; j <= i.config.Raft.ApplicationRetries; j++ {
-		if c, err := i.Cache(*cmd.CacheName); err == nil {
-			if err := c.(*cache).set(cmd.Key, cmd.Value); err == nil {
+		if c, err := i.Bucket(*cmd.CacheName); err == nil {
+			if err := c.(*bucket).set(cmd.Key, cmd.Value); err == nil {
 				break
 			}
 		}
@@ -56,8 +56,8 @@ func (i *instance) applyCachePut(cmd *huton_proto.CachePutCommand) {
 
 func (i *instance) applyCacheDelete(cmd *huton_proto.CacheDeleteCommand) {
 	for j := 0; j <= i.config.Raft.ApplicationRetries; j++ {
-		if c, err := i.Cache(*cmd.CacheName); err == nil {
-			if err := c.(*cache).delete(cmd.Key); err == nil {
+		if c, err := i.Bucket(*cmd.CacheName); err == nil {
+			if err := c.(*bucket).del(cmd.Key); err == nil {
 				break
 			}
 		}
