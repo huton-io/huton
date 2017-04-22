@@ -36,7 +36,7 @@ func (c *Command) Run(args []string) int {
 		return 1
 	}
 	if cacheName == "" {
-		c.UI.Error("Cache name must be provided.")
+		c.UI.Error("Bucket name must be provided.")
 		return 1
 	}
 	if key == "" {
@@ -49,7 +49,7 @@ func (c *Command) Run(args []string) int {
 		return 1
 	}
 	defer instance.Shutdown()
-	cache, err := instance.Cache(cacheName)
+	cache, err := instance.Bucket(cacheName)
 	if err != nil {
 		c.UI.Error(fmt.Sprintf("Failed to get cache with name %s: %s", cacheName, err))
 		return 1
