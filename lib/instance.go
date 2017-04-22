@@ -6,40 +6,52 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 	"github.com/hashicorp/serf/serf"
+	"github.com/juju/errors"
 	"google.golang.org/grpc"
+	"io"
 	"net"
+	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
+)
+
+var (
+	ErrNoName error = errors.New("No instance name provided.")
 )
 
 // Config provides configuration to a Huton instance. It is composed of Serf and Raft configs, as well as some
 // huton-specific configurations. A few of the 3rd party configurations are ignored, such as Serf.EventCh, but most
 // all of it is used.
 type Config struct {
-	Serf           *serf.Config
-	Raft           *RaftConfig
-	Peers          []string
-	BaseDir        string
-	CacheDBTimeout string
+	BindAddr                string
+	BindPort                int
+	Peers                   []string
+	BaseDir                 string
+	CacheDBTimeout          string
+	RaftApplicationRetries  int
+	RaftApplicationTimeout  string
+	RaftRetainSnapshotCount int
+	RaftMaxPool             int
+	RaftTransportTimeout    string
+	LogOutput               io.Writer
+	SerfEventChannel        chan serf.Event
 }
 
 // DefaultConfig creates a Config instance initialized with default values.
 func DefaultConfig() *Config {
 	c := &Config{
-		Serf: serf.DefaultConfig(),
-		Raft: &RaftConfig{
-			Config:              raft.DefaultConfig(),
-			RetainSnapshotCount: 2,
-			MaxPool:             3,
-			TransportTimeout:    "10s",
-			ApplicationTimeout:  "10s",
-		},
-		Peers:          make([]string, 0),
-		CacheDBTimeout: "10s",
+		BindAddr:                "127.0.0.1",
+		BindPort:                8100,
+		RaftRetainSnapshotCount: 2,
+		RaftMaxPool:             3,
+		RaftTransportTimeout:    "10s",
+		RaftApplicationTimeout:  "10s",
+		Peers:            make([]string, 0),
+		CacheDBTimeout:   "10s",
+		SerfEventChannel: make(chan serf.Event),
+		LogOutput:        os.Stdout,
 	}
-	c.Raft.ShutdownOnRemove = false
 	return c
 }
 
@@ -57,7 +69,7 @@ type Instance interface {
 }
 
 type instance struct {
-	id               string
+	name             string
 	serf             *serf.Serf
 	raft             *raft.Raft
 	raftJSONPeers    *raft.JSONPeers
@@ -124,30 +136,31 @@ func (i *instance) Shutdown() error {
 // GRPC server, with the provided configuration.
 //
 // If this function returns successfully, the instance should be considered started and ready for use.
-func NewInstance(config *Config) (Instance, error) {
-	host := net.JoinHostPort(config.Serf.MemberlistConfig.BindAddr, strconv.Itoa(config.Serf.MemberlistConfig.BindPort))
+func NewInstance(name string, config *Config) (Instance, error) {
+	if name == "" {
+		return nil, ErrNoName
+	}
 	i := &instance{
-		id:               host,
-		serfEventChannel: make(chan serf.Event),
+		name:             name,
 		shutdownCh:       make(chan struct{}),
 		peers:            make(map[string]*Peer),
 		config:           config,
 		caches:           make(map[string]*bucket),
-		cachesDBFilePath: filepath.Join(config.BaseDir, config.Serf.NodeName, "caches.db"),
+		cachesDBFilePath: filepath.Join(config.BaseDir, name, "caches.db"),
 	}
 	if err := i.setupCachesDB(); err != nil {
 		return i, err
 	}
-	ip := net.ParseIP(config.Serf.MemberlistConfig.BindAddr)
+	ip := net.ParseIP(config.BindAddr)
 	raftAddr := &net.TCPAddr{
 		IP:   ip,
-		Port: config.Serf.MemberlistConfig.BindPort + 1,
+		Port: config.BindPort + 1,
 	}
 	rpcAddr := &net.TCPAddr{
 		IP:   ip,
-		Port: config.Serf.MemberlistConfig.BindPort + 2,
+		Port: config.BindPort + 2,
 	}
-	if err := i.setupSerf(config.Serf, raftAddr, rpcAddr); err != nil {
+	if err := i.setupSerf(raftAddr, rpcAddr); err != nil {
 		i.Shutdown()
 		return i, err
 	}
@@ -198,7 +211,7 @@ func (i *instance) setupCachesDB() error {
 func (i *instance) handleEvents() {
 	for {
 		select {
-		case e := <-i.serfEventChannel:
+		case e := <-i.config.SerfEventChannel:
 			i.handleSerfEvent(e)
 		case <-i.serf.ShutdownCh():
 			i.Shutdown()

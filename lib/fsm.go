@@ -15,7 +15,7 @@ const (
 )
 
 func (i *instance) Apply(l *raft.Log) interface{} {
-	for j := 0; j <= i.config.Raft.ApplicationRetries; j++ {
+	for j := 0; j <= i.config.RaftApplicationRetries; j++ {
 		var cmd huton_proto.Command
 		if err := proto.Unmarshal(l.Data, &cmd); err == nil {
 			i.applyCommand(&cmd)
@@ -26,7 +26,7 @@ func (i *instance) Apply(l *raft.Log) interface{} {
 }
 
 func (i *instance) applyCommand(cmd *huton_proto.Command) {
-	for j := 0; j <= i.config.Raft.ApplicationRetries; j++ {
+	for j := 0; j <= i.config.RaftApplicationRetries; j++ {
 		switch *cmd.Type {
 		case typeCachePut:
 			var cachePutCmd huton_proto.CachePutCommand
@@ -45,7 +45,7 @@ func (i *instance) applyCommand(cmd *huton_proto.Command) {
 }
 
 func (i *instance) applyCachePut(cmd *huton_proto.CachePutCommand) {
-	for j := 0; j <= i.config.Raft.ApplicationRetries; j++ {
+	for j := 0; j <= i.config.RaftApplicationRetries; j++ {
 		if c, err := i.Bucket(*cmd.CacheName); err == nil {
 			if err := c.(*bucket).set(cmd.Key, cmd.Value); err == nil {
 				break
@@ -55,7 +55,7 @@ func (i *instance) applyCachePut(cmd *huton_proto.CachePutCommand) {
 }
 
 func (i *instance) applyCacheDelete(cmd *huton_proto.CacheDeleteCommand) {
-	for j := 0; j <= i.config.Raft.ApplicationRetries; j++ {
+	for j := 0; j <= i.config.RaftApplicationRetries; j++ {
 		if c, err := i.Bucket(*cmd.CacheName); err == nil {
 			if err := c.(*bucket).del(cmd.Key); err == nil {
 				break

@@ -6,8 +6,24 @@ import (
 	"strconv"
 )
 
-func (i *instance) setupSerf(serfConfig *serf.Config, raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) error {
-	serfConfig.EventCh = i.serfEventChannel
+func (i *instance) setupSerf(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (err error) {
+	serfConfig := i.getSerfConfig(raftAddr, rpcAddr)
+	i.serf, err = serf.Create(serfConfig)
+	if err != nil {
+		return
+	}
+	if len(i.config.Peers) > 0 {
+		_, err = i.serf.Join(i.config.Peers, true)
+	}
+	return
+}
+
+func (i *instance) getSerfConfig(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) *serf.Config {
+	serfConfig := serf.DefaultConfig()
+	serfConfig.MemberlistConfig.BindAddr = i.config.BindAddr
+	serfConfig.MemberlistConfig.BindPort = i.config.BindPort
+	serfConfig.NodeName = i.name
+	serfConfig.EventCh = i.config.SerfEventChannel
 	tags := make(map[string]string)
 	tags["id"] = serfConfig.NodeName
 	tags["raftIP"] = raftAddr.IP.String()
@@ -15,17 +31,7 @@ func (i *instance) setupSerf(serfConfig *serf.Config, raftAddr *net.TCPAddr, rpc
 	tags["rpcIP"] = rpcAddr.IP.String()
 	tags["rpcPort"] = strconv.Itoa(rpcAddr.Port)
 	serfConfig.Tags = tags
-	s, err := serf.Create(serfConfig)
-	if err != nil {
-		return err
-	}
-	i.serf = s
-	if len(i.config.Peers) > 0 {
-		if _, err := s.Join(i.config.Peers, true); err != nil {
-			return err
-		}
-	}
-	return nil
+	return serfConfig
 }
 
 func (i *instance) handleSerfEvent(event serf.Event) {

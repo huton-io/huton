@@ -1,7 +1,6 @@
 package huton
 
 import (
-	"errors"
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
@@ -16,33 +15,20 @@ const (
 	raftLogCacheSize = 512
 )
 
-// RaftConfig provides configuration options for the Raft server.
-type RaftConfig struct {
-	*raft.Config        `json:",inline" yaml:",inline"`
-	ApplicationRetries  int    `json:"applicationRetries" yaml:"applicationRetries"`
-	ApplicationTimeout  string `json:"applicationTimeout" yaml:"applicationTimeout"`
-	RetainSnapshotCount int    `json:"retainSnapshotCount" yaml:"retainSnapshotCount"`
-	MaxPool             int    `json:"maxPool" yaml:"maxPool"`
-	TransportTimeout    string `json:"transportTimeout" yaml:"transportTimeout"`
-}
-
 func (i *instance) setupRaft() error {
-	t, err := time.ParseDuration(i.config.Raft.TransportTimeout)
+	t, err := time.ParseDuration(i.config.RaftTransportTimeout)
 	if err != nil {
 		return err
 	}
 	addr := &net.TCPAddr{
-		IP:   net.ParseIP(i.config.Serf.MemberlistConfig.BindAddr),
-		Port: i.config.Serf.MemberlistConfig.BindPort + 1,
+		IP:   net.ParseIP(i.config.BindAddr),
+		Port: i.config.BindPort + 1,
 	}
-	i.raftTransport, err = raft.NewTCPTransport(addr.String(), addr, i.config.Raft.MaxPool, t, i.config.Raft.LogOutput)
+	i.raftTransport, err = raft.NewTCPTransport(addr.String(), addr, i.config.RaftMaxPool, t, i.config.LogOutput)
 	if err != nil {
 		return err
 	}
-	if i.id == "" {
-		return errors.New("No instance id provided")
-	}
-	basePath := filepath.Join(i.config.BaseDir, i.config.Serf.NodeName)
+	basePath := filepath.Join(i.config.BaseDir, i.name)
 	i.raftJSONPeers = raft.NewJSONPeers(basePath, i.raftTransport)
 	var peers []string
 	for _, peer := range i.peers {
@@ -51,7 +37,7 @@ func (i *instance) setupRaft() error {
 	if err := i.raftJSONPeers.SetPeers(peers); err != nil {
 		return err
 	}
-	snapshots, err := raft.NewFileSnapshotStore(basePath, i.config.Raft.RetainSnapshotCount, os.Stderr)
+	snapshots, err := raft.NewFileSnapshotStore(basePath, i.config.RaftRetainSnapshotCount, os.Stderr)
 	if err != nil {
 		return err
 	}
@@ -64,8 +50,16 @@ func (i *instance) setupRaft() error {
 	if err != nil {
 		return err
 	}
-	i.raft, err = raft.NewRaft(i.config.Raft.Config, i, logCache, logStore, snapshots, i.raftJSONPeers, i.raftTransport)
+	raftConfig := i.getRaftConfig()
+	i.raft, err = raft.NewRaft(raftConfig, i, logCache, logStore, snapshots, i.raftJSONPeers, i.raftTransport)
 	return err
+}
+
+func (i *instance) getRaftConfig() *raft.Config {
+	raftConfig := raft.DefaultConfig()
+	raftConfig.LogOutput = i.config.LogOutput
+	raftConfig.ShutdownOnRemove = false
+	return raftConfig
 }
 
 func (i *instance) addRaftPeer(peer *Peer) error {
@@ -97,7 +91,7 @@ func (i *instance) apply(cmd *huton_proto.Command) error {
 	if err != nil {
 		return err
 	}
-	timeout, err := time.ParseDuration(i.config.Raft.ApplicationTimeout)
+	timeout, err := time.ParseDuration(i.config.RaftApplicationTimeout)
 	if err != nil {
 		return err
 	}
