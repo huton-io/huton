@@ -16,29 +16,29 @@ type Command struct {
 	instance   huton.Instance
 }
 
-func (c *Command) readConfig() (*huton.Config, error) {
+func (c *Command) readConfig() (string, *huton.Config, error) {
 	config := huton.DefaultConfig()
 	flags := flag.NewFlagSet("agent", flag.ContinueOnError)
 	flags.Usage = func() {
 		c.UI.Output(c.Help())
 	}
-	flags.StringVar(&config.Serf.NodeName, "name", "", "unique instance name")
-	flags.StringVar(&config.Serf.MemberlistConfig.BindAddr, "bindAddr", "127.0.0.1", "address to bind serf to")
-	flags.IntVar(&config.Serf.MemberlistConfig.BindPort, "bindPort", 8080, "port to bind serf to")
+	var name string
+	flags.StringVar(&name, "name", "", "unique instance name")
+	flags.StringVar(&config.BindAddr, "bindAddr", config.BindAddr, "address to bind serf to")
+	flags.IntVar(&config.BindPort, "bindPort", config.BindPort, "port to bind serf to")
 	flags.Var((*command.AppendSliceValue)(&config.Peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return config, nil
+	return name, config, nil
 }
 
 func (c *Command) Run(args []string) int {
-	config, err := c.readConfig()
+	name, config, err := c.readConfig()
 	if err != nil {
-		c.UI.Error(err.Error())
 		return 1
 	}
-	c.instance, err = huton.NewInstance(config)
+	c.instance, err = huton.NewInstance(name, config)
 	if err != nil {
 		c.UI.Error(err.Error())
 		return 1

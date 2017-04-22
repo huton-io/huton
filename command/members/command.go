@@ -14,11 +14,11 @@ type Command struct {
 }
 
 func (c *Command) Run(args []string) int {
-	config, err := c.readConfig()
+	name, config, err := c.readConfig()
 	if err != nil {
 		return 1
 	}
-	instance, err := huton.NewInstance(config)
+	instance, err := huton.NewInstance(name, config)
 	if err != nil {
 		c.UI.Error(err.Error())
 		return 1
@@ -26,7 +26,7 @@ func (c *Command) Run(args []string) int {
 	defer instance.Shutdown()
 	peers := instance.Peers()
 	for _, peer := range peers {
-		if peer.ID != config.Serf.NodeName {
+		if peer.Name != name {
 			c.UI.Output(peer.String())
 		}
 	}
@@ -41,21 +41,20 @@ func (c *Command) Help() string {
 	return ""
 }
 
-func (c *Command) readConfig() (*huton.Config, error) {
+func (c *Command) readConfig() (string, *huton.Config, error) {
 	config := huton.DefaultConfig()
-	config.Raft.LogOutput = ioutil.Discard
-	config.Serf.LogOutput = ioutil.Discard
-	config.Serf.MemberlistConfig.LogOutput = ioutil.Discard
-	flags := flag.NewFlagSet("members", flag.ExitOnError)
+	config.LogOutput = ioutil.Discard
+	flags := flag.NewFlagSet("members", flag.ContinueOnError)
 	flags.Usage = func() {
 		c.UI.Error(c.Help())
 	}
-	flags.StringVar(&config.Serf.NodeName, "name", "", "unique instnace name")
-	flags.StringVar(&config.Serf.MemberlistConfig.BindAddr, "bindAddr", "127.0.0.1", "address to bind serf to")
-	flags.IntVar(&config.Serf.MemberlistConfig.BindPort, "bindPort", 8080, "port to bind serf to")
+	var name string
+	flags.StringVar(&name, "name", "members", "unique instnace name")
+	flags.StringVar(&config.BindAddr, "bindAddr", config.BindAddr, "address to bind serf to")
+	flags.IntVar(&config.BindPort, "bindPort", config.BindPort, "port to bind serf to")
 	flags.Var((*command.AppendSliceValue)(&config.Peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return config, nil
+	return name, config, nil
 }

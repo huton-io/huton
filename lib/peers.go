@@ -9,7 +9,7 @@ import (
 
 // Peer contains information about a cluster member.
 type Peer struct {
-	ID       string
+	Name     string
 	SerfAddr *net.TCPAddr
 	RaftAddr *net.TCPAddr
 	RPCAddr  *net.TCPAddr
@@ -30,7 +30,7 @@ func newPeer(member serf.Member) (*Peer, error) {
 		return nil, err
 	}
 	return &Peer{
-		ID: member.Tags["id"],
+		Name: member.Tags["id"],
 		SerfAddr: &net.TCPAddr{
 			IP:   member.Addr,
 			Port: int(member.Port),
@@ -60,7 +60,7 @@ func (i *instance) Local() *Peer {
 	i.peersMu.Lock()
 	defer i.peersMu.Unlock()
 	for _, p := range i.peers {
-		if p.ID == i.id {
+		if p.Name == i.name {
 			return p
 		}
 	}
