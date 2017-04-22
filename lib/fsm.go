@@ -66,18 +66,18 @@ func (i *instance) applyCacheDelete(cmd *huton_proto.CacheDeleteCommand) {
 
 func (i *instance) Snapshot() (raft.FSMSnapshot, error) {
 	return &fsmSnapshot{
-		db: i.cachesDB,
+		db: i.db,
 	}, nil
 }
 
 func (i *instance) Restore(rc io.ReadCloser) error {
-	if i.cachesDB != nil {
-		if err := i.cachesDB.Close(); err != nil {
+	if i.db != nil {
+		if err := i.db.Close(); err != nil {
 			return err
 		}
 	}
 	if err := func() error {
-		f, err := os.OpenFile(i.cachesDBFilePath, os.O_WRONLY|os.O_TRUNC, 0644)
+		f, err := os.OpenFile(i.dbFilePath, os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			return err
 		}

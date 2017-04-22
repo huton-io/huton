@@ -75,26 +75,26 @@ type instance struct {
 	raftJSONPeers    *raft.JSONPeers
 	raftBoltStore    *raftboltdb.BoltStore
 	raftTransport    *raft.NetworkTransport
-	cachesDBFilePath string
-	cachesDB         *bolt.DB
+	dbFilePath       string
+	db               *bolt.DB
 	rpcListener      net.Listener
 	rpc              *grpc.Server
 	serfEventChannel chan serf.Event
 	shutdownCh       chan struct{}
 	peersMu          sync.Mutex
 	peers            map[string]*Peer
-	cacheMu          sync.Mutex
+	dbMu             sync.Mutex
 	config           *Config
-	caches           map[string]*bucket
+	buckets          map[string]*bucket
 }
 
 func (i *instance) Bucket(name string) (Bucket, error) {
-	i.cacheMu.Lock()
-	defer i.cacheMu.Unlock()
-	if c, ok := i.caches[name]; ok {
+	i.dbMu.Lock()
+	defer i.dbMu.Unlock()
+	if c, ok := i.buckets[name]; ok {
 		return c, nil
 	}
-	return newBucket(i.cachesDB, name, i)
+	return newBucket(i.db, name, i)
 }
 
 func (i *instance) Shutdown() error {
@@ -123,8 +123,8 @@ func (i *instance) Shutdown() error {
 			return err
 		}
 	}
-	if i.cachesDB != nil {
-		if err := i.cachesDB.Close(); err != nil {
+	if i.db != nil {
+		if err := i.db.Close(); err != nil {
 			return err
 		}
 	}
@@ -141,12 +141,12 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		return nil, ErrNoName
 	}
 	i := &instance{
-		name:             name,
-		shutdownCh:       make(chan struct{}),
-		peers:            make(map[string]*Peer),
-		config:           config,
-		caches:           make(map[string]*bucket),
-		cachesDBFilePath: filepath.Join(config.BaseDir, name, "caches.db"),
+		name:       name,
+		shutdownCh: make(chan struct{}),
+		peers:      make(map[string]*Peer),
+		config:     config,
+		buckets:    make(map[string]*bucket),
+		dbFilePath: filepath.Join(config.BaseDir, name, "store.db"),
 	}
 	if err := i.setupCachesDB(); err != nil {
 		return i, err
@@ -198,13 +198,13 @@ func (i *instance) setupCachesDB() error {
 	if err != nil {
 		return err
 	}
-	cachesDB, err := bolt.Open(i.cachesDBFilePath, 0644, &bolt.Options{
+	cachesDB, err := bolt.Open(i.dbFilePath, 0644, &bolt.Options{
 		Timeout: timeout,
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to open caches DB file %s: %s", i.cachesDBFilePath, err)
+		return fmt.Errorf("Failed to open DB file %s: %s", i.dbFilePath, err)
 	}
-	i.cachesDB = cachesDB
+	i.db = cachesDB
 	return nil
 }
 
