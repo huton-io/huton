@@ -87,7 +87,7 @@ func (i *instance) Restore(rc io.ReadCloser) error {
 	}(); err != nil {
 		return err
 	}
-	if err := i.setupCachesDB(); err != nil {
+	if err := i.setupDB(); err != nil {
 		return err
 	}
 	return nil

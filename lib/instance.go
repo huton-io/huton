@@ -9,6 +9,8 @@ import (
 	"github.com/juju/errors"
 	"google.golang.org/grpc"
 	"io"
+	"io/ioutil"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -86,6 +88,7 @@ type instance struct {
 	dbMu             sync.Mutex
 	config           *Config
 	buckets          map[string]*bucket
+	logger           *log.Logger
 }
 
 func (i *instance) Bucket(name string) (Bucket, error) {
@@ -98,34 +101,35 @@ func (i *instance) Bucket(name string) (Bucket, error) {
 }
 
 func (i *instance) Shutdown() error {
+	i.logger.Println("Shutting down instance...")
 	if i.serf != nil {
 		if err := i.serf.Leave(); err != nil {
-			return err
+			return fmt.Errorf("Failed to leave Serf cluster: %s", err)
 		}
 	}
 	if i.raftBoltStore != nil {
 		if err := i.raftBoltStore.Close(); err != nil {
-			return err
+			return fmt.Errorf("Failed to close Raft store: %s", err)
 		}
 	}
 	if i.raftTransport != nil {
 		if err := i.raftTransport.Close(); err != nil {
-			return err
+			return fmt.Errorf("Failed to close Raft transport: %s", err)
 		}
 	}
 	if i.raft != nil {
 		if err := i.raft.Shutdown().Error(); err != nil {
-			return err
+			return fmt.Errorf("Failed to shut down Raft instance: %s", err)
 		}
 	}
 	if i.rpcListener != nil {
 		if err := i.rpcListener.Close(); err != nil {
-			return err
+			return fmt.Errorf("Failed to close RPC Listener: %s", err)
 		}
 	}
 	if i.db != nil {
 		if err := i.db.Close(); err != nil {
-			return err
+			return fmt.Errorf("Failed to close datastore: %s", err)
 		}
 	}
 	close(i.shutdownCh)
@@ -140,6 +144,9 @@ func NewInstance(name string, config *Config) (Instance, error) {
 	if name == "" {
 		return nil, ErrNoName
 	}
+	if config.LogOutput != nil {
+		config.LogOutput = ioutil.Discard
+	}
 	i := &instance{
 		name:       name,
 		shutdownCh: make(chan struct{}),
@@ -147,8 +154,10 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		config:     config,
 		buckets:    make(map[string]*bucket),
 		dbFilePath: filepath.Join(config.BaseDir, name, "store.db"),
+		logger:     log.New(config.LogOutput, "huton", log.LstdFlags),
 	}
-	if err := i.setupCachesDB(); err != nil {
+	i.logger.Println("Initializing datastore...")
+	if err := i.setupDB(); err != nil {
 		return i, err
 	}
 	ip := net.ParseIP(config.BindAddr)
@@ -160,10 +169,12 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		IP:   ip,
 		Port: config.BindPort + 2,
 	}
+	i.logger.Println("Initializing Serf cluster...")
 	if err := i.setupSerf(raftAddr, rpcAddr); err != nil {
 		i.Shutdown()
 		return i, err
 	}
+	i.logger.Println("Configuring peers...")
 	i.peersMu.Lock()
 	members := i.serf.Members()
 	for _, member := range members {
@@ -175,15 +186,18 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		i.peers[p.RaftAddr.String()] = p
 	}
 	i.peersMu.Unlock()
+	i.logger.Println("Initializing Raft cluster...")
 	if err := i.setupRaft(); err != nil {
 		i.Shutdown()
 		return i, err
 	}
+	i.logger.Println("Initializing RPC server...")
 	if err := i.setupRPC(); err != nil {
 		i.Shutdown()
 		return i, err
 	}
 	// Wait for initial leader state
+	i.logger.Println("Waiting for initial leader state...")
 	for {
 		if i.raft.Leader() != "" {
 			break
@@ -193,10 +207,10 @@ func NewInstance(name string, config *Config) (Instance, error) {
 	return i, nil
 }
 
-func (i *instance) setupCachesDB() error {
+func (i *instance) setupDB() error {
 	timeout, err := time.ParseDuration(i.config.CacheDBTimeout)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to parse duration: %s", err)
 	}
 	cachesDB, err := bolt.Open(i.dbFilePath, 0644, &bolt.Options{
 		Timeout: timeout,
