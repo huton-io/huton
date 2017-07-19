@@ -1,14 +1,15 @@
 package huton
 
 import (
-	"github.com/golang/protobuf/proto"
-	"github.com/hashicorp/raft"
-	"github.com/hashicorp/raft-boltdb"
-	"github.com/jonbonazza/huton/lib/proto"
 	"net"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/golang/protobuf/proto"
+	"github.com/hashicorp/raft"
+	"github.com/hashicorp/raft-boltdb"
+	"github.com/jonbonazza/huton/lib/proto"
 )
 
 const (
@@ -62,18 +63,32 @@ func (i *instance) getRaftConfig() *raft.Config {
 	return raftConfig
 }
 
-func (i *instance) addRaftPeer(peer *Peer) error {
-	if !i.isLeader() {
-		return nil
+func (i *instance) setRaftPeers() error {
+	var peers []string
+	i.peersMu.Lock()
+	for id := range i.peers {
+		peers = append(peers, id)
 	}
-	return i.raft.AddPeer(peer.RaftAddr.String()).Error()
+	i.peersMu.Unlock()
+	return i.raftJSONPeers.SetPeers(peers)
+}
+
+func (i *instance) addRaftPeer(peer *Peer) error {
+	if i.isLeader() {
+		if err := i.raft.AddPeer(peer.RaftAddr.String()).Error(); err != nil {
+			return err
+		}
+	}
+	return i.setRaftPeers()
 }
 
 func (i *instance) removeRaftPeer(peer *Peer) error {
-	if !i.isLeader() {
-		return nil
+	if i.isLeader() {
+		if err := i.raft.RemovePeer(peer.RaftAddr.String()).Error(); err != nil {
+			return err
+		}
 	}
-	return i.raft.RemovePeer(peer.RaftAddr.String()).Error()
+	return i.setRaftPeers()
 }
 
 func (i *instance) apply(cmd *huton_proto.Command) error {
