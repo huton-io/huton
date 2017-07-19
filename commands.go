@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-func Commands() map[string]cli.CommandFactory {
+func commands() map[string]cli.CommandFactory {
 	ui := &cli.BasicUi{
 		Writer: os.Stdout,
 	}

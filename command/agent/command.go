@@ -2,18 +2,44 @@ package agent
 
 import (
 	"flag"
-	"github.com/jonbonazza/huton/command"
-	"github.com/jonbonazza/huton/lib"
-	"github.com/mitchellh/cli"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/jonbonazza/huton/command"
+	"github.com/jonbonazza/huton/lib"
+	"github.com/mitchellh/cli"
 )
 
+// Command is a CLI command use to start a huton agent.
 type Command struct {
 	UI         cli.Ui
 	ShutdownCh <-chan struct{}
 	instance   huton.Instance
+}
+
+// Run is called by the CLI to execute the command.
+func (c *Command) Run(args []string) int {
+	name, config, err := c.readConfig()
+	if err != nil {
+		return 1
+	}
+	c.instance, err = huton.NewInstance(name, config)
+	if err != nil {
+		c.UI.Error(err.Error())
+		return 1
+	}
+	return c.handleSignals()
+}
+
+// Synopsis is used by the CLI to provide a synopsis of the command.
+func (c *Command) Synopsis() string {
+	return ""
+}
+
+// Help is used by the CLI to provide help text for the command.
+func (c *Command) Help() string {
+	return ""
 }
 
 func (c *Command) readConfig() (string, *huton.Config, error) {
@@ -33,19 +59,6 @@ func (c *Command) readConfig() (string, *huton.Config, error) {
 	return name, config, nil
 }
 
-func (c *Command) Run(args []string) int {
-	name, config, err := c.readConfig()
-	if err != nil {
-		return 1
-	}
-	c.instance, err = huton.NewInstance(name, config)
-	if err != nil {
-		c.UI.Error(err.Error())
-		return 1
-	}
-	return c.handleSignals()
-}
-
 func (c *Command) handleSignals() int {
 	signalCh := make(chan os.Signal, 3)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
@@ -57,12 +70,4 @@ func (c *Command) handleSignals() int {
 		c.instance.Shutdown()
 		return 0
 	}
-}
-
-func (c *Command) Synopsis() string {
-	return ""
-}
-
-func (c *Command) Help() string {
-	return ""
 }

@@ -2,17 +2,20 @@ package members
 
 import (
 	"flag"
+	"io/ioutil"
+	"os"
+
 	"github.com/jonbonazza/huton/command"
 	"github.com/jonbonazza/huton/lib"
 	"github.com/mitchellh/cli"
-	"io/ioutil"
-	"os"
 )
 
+// Command is a CLI command used to list the members in an existing cluster.
 type Command struct {
 	UI cli.Ui
 }
 
+// Run is used by the CLI to execute the command.
 func (c *Command) Run(args []string) int {
 	name, config, err := c.readConfig()
 	if err != nil {
@@ -33,10 +36,12 @@ func (c *Command) Run(args []string) int {
 	return 0
 }
 
+// Synopsis is used by the CLI to provide a synopsis of the command.
 func (c *Command) Synopsis() string {
 	return ""
 }
 
+// Help is used by the CLI to provide help text for the command.
 func (c *Command) Help() string {
 	return ""
 }

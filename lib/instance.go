@@ -20,7 +20,8 @@ import (
 )
 
 var (
-	ErrNoName error = errors.New("No instance name provided.")
+	// ErrNoName is an error used when and instance name is not provided
+	ErrNoName = errors.New("no instance name provided")
 )
 
 // Config provides configuration to a Huton instance. It is composed of Serf and Raft configs, as well as some

@@ -9,7 +9,7 @@ import (
 func main() {
 	c := &cli.CLI{
 		Args:     os.Args[1:],
-		Commands: Commands(),
+		Commands: commands(),
 		HelpFunc: cli.BasicHelpFunc("huton"),
 	}
 	exitCode, err := c.Run()
