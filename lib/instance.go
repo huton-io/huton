@@ -2,12 +2,6 @@ package huton
 
 import (
 	"fmt"
-	"github.com/boltdb/bolt"
-	"github.com/hashicorp/raft"
-	"github.com/hashicorp/raft-boltdb"
-	"github.com/hashicorp/serf/serf"
-	"github.com/juju/errors"
-	"google.golang.org/grpc"
 	"io"
 	"io/ioutil"
 	"log"
@@ -16,6 +10,13 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/boltdb/bolt"
+	"github.com/hashicorp/raft"
+	"github.com/hashicorp/raft-boltdb"
+	"github.com/hashicorp/serf/serf"
+	"github.com/juju/errors"
+	"google.golang.org/grpc"
 )
 
 var (
@@ -144,7 +145,7 @@ func NewInstance(name string, config *Config) (Instance, error) {
 	if name == "" {
 		return nil, ErrNoName
 	}
-	if config.LogOutput != nil {
+	if config.LogOutput == nil {
 		config.LogOutput = ioutil.Discard
 	}
 	i := &instance{
