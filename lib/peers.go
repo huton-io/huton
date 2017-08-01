@@ -2,17 +2,20 @@ package huton
 
 import (
 	"encoding/json"
-	"github.com/hashicorp/serf/serf"
 	"net"
 	"strconv"
+
+	"github.com/hashicorp/serf/serf"
 )
 
 // Peer contains information about a cluster member.
 type Peer struct {
-	Name     string
-	SerfAddr *net.TCPAddr
-	RaftAddr *net.TCPAddr
-	RPCAddr  *net.TCPAddr
+	Name      string
+	SerfAddr  *net.TCPAddr
+	RaftAddr  *net.TCPAddr
+	RPCAddr   *net.TCPAddr
+	Expect    int
+	Bootstrap bool
 }
 
 func (p *Peer) String() string {
@@ -26,6 +29,10 @@ func newPeer(member serf.Member) (*Peer, error) {
 		return nil, err
 	}
 	rpcPort, err := strconv.Atoi(member.Tags["rpcPort"])
+	if err != nil {
+		return nil, err
+	}
+	expect, err := strconv.Atoi(member.Tags["expect"])
 	if err != nil {
 		return nil, err
 	}
@@ -43,6 +50,8 @@ func newPeer(member serf.Member) (*Peer, error) {
 			IP:   net.ParseIP(member.Tags["rpcIP"]),
 			Port: rpcPort,
 		},
+		Expect:    expect,
+		Bootstrap: member.Tags["boostrap"] == "1",
 	}, nil
 }
 

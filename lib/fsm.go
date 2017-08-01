@@ -1,17 +1,19 @@
 package huton
 
 import (
+	"io"
+	"os"
+
 	"github.com/boltdb/bolt"
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/raft"
 	"github.com/jonbonazza/huton/lib/proto"
-	"io"
-	"os"
 )
 
 const (
 	typeCachePut uint32 = iota
 	typeCacheDelete
+	typeLeaveCluster
 )
 
 func (i *instance) Apply(l *raft.Log) interface{} {
@@ -40,6 +42,8 @@ func (i *instance) applyCommand(cmd *huton_proto.Command) {
 				continue
 			}
 			i.applyCacheDelete(&cacheDeleteCmd)
+		case typeLeaveCluster:
+			i.applyLeaveCluster(string(cmd.Body))
 		}
 	}
 }
@@ -60,6 +64,14 @@ func (i *instance) applyCacheDelete(cmd *huton_proto.CacheDeleteCommand) {
 			if err := c.(*bucket).del(cmd.Key); err == nil {
 				break
 			}
+		}
+	}
+}
+
+func (i *instance) applyLeaveCluster(name string) {
+	if i.IsLeader() {
+		if err := i.raft.RemoveServer(raft.ServerID(name), 0, 0).Error(); err != nil {
+			i.logger.Printf("[WARN] failed to remove peer: %v", err)
 		}
 	}
 }

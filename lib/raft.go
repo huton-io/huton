@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"fmt"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/raft"
-	"github.com/hashicorp/raft-boltdb"
+	raftboltdb "github.com/hashicorp/raft-boltdb"
 	"github.com/jonbonazza/huton/lib/proto"
 )
 
@@ -30,65 +32,67 @@ func (i *instance) setupRaft() error {
 		return err
 	}
 	basePath := filepath.Join(i.config.BaseDir, i.name)
-	i.raftJSONPeers = raft.NewJSONPeers(basePath, i.raftTransport)
-	var peers []string
-	for _, peer := range i.peers {
-		peers = append(peers, peer.RaftAddr.String())
-	}
-	if err := i.raftJSONPeers.SetPeers(peers); err != nil {
+	if err := EnsurePath(basePath, true); err != nil {
 		return err
 	}
-	snapshots, err := raft.NewFileSnapshotStore(basePath, i.config.RaftRetainSnapshotCount, os.Stderr)
+	i.raftBoltStore, err = raftboltdb.NewBoltStore(filepath.Join(basePath, "raft.db"))
 	if err != nil {
 		return err
 	}
-	logStore, err := raftboltdb.NewBoltStore(filepath.Join(basePath, "raft.db"))
+	cacheStore, err := raft.NewLogCache(raftLogCacheSize, i.raftBoltStore)
 	if err != nil {
 		return err
 	}
-	i.raftBoltStore = logStore
-	logCache, err := raft.NewLogCache(raftLogCacheSize, logStore)
+	snapshotStore, err := raft.NewFileSnapshotStore(basePath, i.config.RaftRetainSnapshotCount, i.config.LogOutput)
 	if err != nil {
 		return err
 	}
 	raftConfig := i.getRaftConfig()
-	i.raft, err = raft.NewRaft(raftConfig, i, logCache, logStore, snapshots, i.raftJSONPeers, i.raftTransport)
+	peersFile := filepath.Join(basePath, "peers.json")
+	if _, err := os.Stat(peersFile); err == nil {
+		configuration, err := raft.ReadConfigJSON(peersFile)
+		if err != nil {
+			return fmt.Errorf("recovery failed to parse peers.json: %v", err)
+		}
+		if err = raft.RecoverCluster(raftConfig, i, cacheStore, i.raftBoltStore, snapshotStore, i.raftTransport, configuration); err != nil {
+			return fmt.Errorf("recovery failed: %v", err)
+		}
+		if err = os.Remove(peersFile); err != nil {
+			return fmt.Errorf("recovery failed to delete peers.json, please delete manually: %v", err)
+		}
+	}
+	if i.config.Bootstrap {
+		hasState, err := raft.HasExistingState(cacheStore, i.raftBoltStore, snapshotStore)
+		if err != nil {
+			return err
+		}
+		if !hasState {
+			configuration := raft.Configuration{
+				Servers: []raft.Server{
+					raft.Server{
+						ID:      raftConfig.LocalID,
+						Address: i.raftTransport.LocalAddr(),
+					},
+				},
+			}
+			if err := raft.BootstrapCluster(raftConfig, cacheStore, i.raftBoltStore, snapshotStore, i.raftTransport, configuration); err != nil {
+				return err
+			}
+		}
+	}
+	raftNotifyCh := make(chan bool, 1)
+	raftConfig.NotifyCh = raftNotifyCh
+	i.raftNotifyCh = raftNotifyCh
+	i.raft, err = raft.NewRaft(raftConfig, i, cacheStore, i.raftBoltStore, snapshotStore, i.raftTransport)
 	return err
 }
 
 func (i *instance) getRaftConfig() *raft.Config {
 	raftConfig := raft.DefaultConfig()
+	raftConfig.LocalID = raft.ServerID(i.name)
 	raftConfig.LogOutput = i.config.LogOutput
 	raftConfig.ShutdownOnRemove = false
 	return raftConfig
-}
-
-func (i *instance) setRaftPeers() error {
-	var peers []string
-	i.peersMu.Lock()
-	for id := range i.peers {
-		peers = append(peers, id)
-	}
-	i.peersMu.Unlock()
-	return i.raftJSONPeers.SetPeers(peers)
-}
-
-func (i *instance) addRaftPeer(peer *Peer) error {
-	if i.isLeader() {
-		if err := i.raft.AddPeer(peer.RaftAddr.String()).Error(); err != nil {
-			return err
-		}
-	}
-	return i.setRaftPeers()
-}
-
-func (i *instance) removeRaftPeer(peer *Peer) error {
-	if i.isLeader() {
-		if err := i.raft.RemovePeer(peer.RaftAddr.String()).Error(); err != nil {
-			return err
-		}
-	}
-	return i.setRaftPeers()
 }
 
 func (i *instance) apply(cmd *huton_proto.Command) error {
@@ -96,11 +100,11 @@ func (i *instance) apply(cmd *huton_proto.Command) error {
 		return nil
 	}
 	// Only the leader can commit raft logs, so if we aren't the leader, we need to forward it to him.
-	if !i.isLeader() {
+	if !i.IsLeader() {
 		leader := i.raft.Leader()
 		i.peersMu.Lock()
 		defer i.peersMu.Unlock()
-		return i.sendCommand(i.peers[leader], cmd)
+		return i.sendCommand(i.peers[string(leader)], cmd)
 	}
 	b, err := proto.Marshal(cmd)
 	if err != nil {

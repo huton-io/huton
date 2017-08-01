@@ -1,10 +1,11 @@
 package main
 
 import (
+	"os"
+
 	"github.com/jonbonazza/huton/command/agent"
 	"github.com/jonbonazza/huton/command/members"
 	"github.com/mitchellh/cli"
-	"os"
 )
 
 func commands() map[string]cli.CommandFactory {
@@ -15,8 +16,7 @@ func commands() map[string]cli.CommandFactory {
 	return map[string]cli.CommandFactory{
 		"agent": func() (cli.Command, error) {
 			return &agent.Command{
-				UI:         ui,
-				ShutdownCh: make(chan struct{}),
+				UI: ui,
 			}, nil
 		},
 		"members": func() (cli.Command, error) {
