@@ -58,6 +58,7 @@ func main() {
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM, syscall.SIGKILL)
 	<-signalCh
+	c.instance.Leave()
 	c.instance.Shutdown()
 }
 
