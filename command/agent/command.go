@@ -13,9 +13,8 @@ import (
 
 // Command is a CLI command use to start a huton agent.
 type Command struct {
-	UI         cli.Ui
-	ShutdownCh <-chan struct{}
-	instance   huton.Instance
+	UI       cli.Ui
+	instance huton.Instance
 }
 
 // Run is called by the CLI to execute the command.
@@ -52,6 +51,8 @@ func (c *Command) readConfig() (string, *huton.Config, error) {
 	flags.StringVar(&name, "name", "", "unique instance name")
 	flags.StringVar(&config.BindAddr, "bindAddr", config.BindAddr, "address to bind serf to")
 	flags.IntVar(&config.BindPort, "bindPort", config.BindPort, "port to bind serf to")
+	flags.BoolVar(&config.Bootstrap, "bootstrap", config.Bootstrap, "bootstrap mode")
+	flags.IntVar(&config.BootstrapExpect, "expect", config.BootstrapExpect, "bootstrap expect")
 	flags.Var((*command.AppendSliceValue)(&config.Peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		return "", nil, err
@@ -64,9 +65,7 @@ func (c *Command) handleSignals() int {
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-signalCh:
-		c.instance.Shutdown()
-		return 0
-	case <-c.ShutdownCh:
+		c.instance.Leave()
 		c.instance.Shutdown()
 		return 0
 	}

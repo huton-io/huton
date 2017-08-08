@@ -1,12 +1,11 @@
 package huton
 
 import (
+	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -15,49 +14,18 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 	"github.com/hashicorp/serf/serf"
-	"github.com/juju/errors"
+	"github.com/jonbonazza/huton/lib/proto"
 	"google.golang.org/grpc"
+)
+
+const (
+	raftRemoveGracePeriod = 5 * time.Second
 )
 
 var (
 	// ErrNoName is an error used when and instance name is not provided
 	ErrNoName = errors.New("no instance name provided")
 )
-
-// Config provides configuration to a Huton instance. It is composed of Serf and Raft configs, as well as some
-// huton-specific configurations. A few of the 3rd party configurations are ignored, such as Serf.EventCh, but most
-// all of it is used.
-type Config struct {
-	BindAddr                string
-	BindPort                int
-	Peers                   []string
-	BaseDir                 string
-	CacheDBTimeout          string
-	RaftApplicationRetries  int
-	RaftApplicationTimeout  string
-	RaftRetainSnapshotCount int
-	RaftMaxPool             int
-	RaftTransportTimeout    string
-	LogOutput               io.Writer
-	SerfEventChannel        chan serf.Event
-}
-
-// DefaultConfig creates a Config instance initialized with default values.
-func DefaultConfig() *Config {
-	c := &Config{
-		BindAddr:                "127.0.0.1",
-		BindPort:                8100,
-		RaftRetainSnapshotCount: 2,
-		RaftMaxPool:             3,
-		RaftTransportTimeout:    "10s",
-		RaftApplicationTimeout:  "10s",
-		Peers:            make([]string, 0),
-		CacheDBTimeout:   "10s",
-		SerfEventChannel: make(chan serf.Event),
-		LogOutput:        os.Stdout,
-	}
-	return c
-}
 
 // Instance is an interface for the Huton instance.
 type Instance interface {
@@ -68,7 +36,13 @@ type Instance interface {
 	Peers() []*Peer
 	// Local returns the local peer.
 	Local() *Peer
-	// Shutdown gracefully shuts down the instance.
+	// IsLeader returns true if this instance is the cluster leader.
+	IsLeader() bool
+	// Join joins and existing cluster.
+	Join(addrs []string) (int, error)
+	// Leave gracefully leaves the cluster.
+	Leave() error
+	// Shutdown forcefully shuts down the instance.
 	Shutdown() error
 }
 
@@ -76,7 +50,6 @@ type instance struct {
 	name             string
 	serf             *serf.Serf
 	raft             *raft.Raft
-	raftJSONPeers    *raft.JSONPeers
 	raftBoltStore    *raftboltdb.BoltStore
 	raftTransport    *raft.NetworkTransport
 	dbFilePath       string
@@ -91,6 +64,9 @@ type instance struct {
 	config           *Config
 	buckets          map[string]*bucket
 	logger           *log.Logger
+	raftNotifyCh     chan bool
+	shutdownLock     sync.Mutex
+	shutdown         bool
 }
 
 func (i *instance) Bucket(name string) (Bucket, error) {
@@ -102,26 +78,36 @@ func (i *instance) Bucket(name string) (Bucket, error) {
 	return newBucket(i.db, name, i)
 }
 
+func (i *instance) Join(addrs []string) (int, error) {
+	return i.serf.Join(addrs, true)
+}
+
+func (i *instance) IsLeader() bool {
+	if i.raft == nil {
+		return false
+	}
+	return i.raft.State() == raft.Leader
+}
+
 func (i *instance) Shutdown() error {
 	i.logger.Println("Shutting down instance...")
+	i.shutdownLock.Lock()
+	defer i.shutdownLock.Unlock()
+	if i.shutdown {
+		return nil
+	}
+	i.shutdown = true
+	close(i.shutdownCh)
 	if i.serf != nil {
-		if err := i.serf.Leave(); err != nil {
-			return fmt.Errorf("Failed to leave Serf cluster: %s", err)
-		}
-	}
-	if i.raftBoltStore != nil {
-		if err := i.raftBoltStore.Close(); err != nil {
-			return fmt.Errorf("Failed to close Raft store: %s", err)
-		}
-	}
-	if i.raftTransport != nil {
-		if err := i.raftTransport.Close(); err != nil {
-			return fmt.Errorf("Failed to close Raft transport: %s", err)
-		}
+		i.serf.Shutdown()
 	}
 	if i.raft != nil {
+		i.raftTransport.Close()
 		if err := i.raft.Shutdown().Error(); err != nil {
-			return fmt.Errorf("Failed to shut down Raft instance: %s", err)
+			i.logger.Printf("[ERR] failed to shudown raft server: %v", err)
+		}
+		if i.raftBoltStore != nil {
+			i.raftBoltStore.Close()
 		}
 	}
 	if i.rpcListener != nil {
@@ -134,8 +120,63 @@ func (i *instance) Shutdown() error {
 			return fmt.Errorf("Failed to close datastore: %s", err)
 		}
 	}
-	close(i.shutdownCh)
 	return nil
+}
+
+func (i *instance) Leave() error {
+	numPeers, err := i.numPeers()
+	if err != nil {
+		return err
+	}
+	addr := i.raftTransport.LocalAddr()
+	isLeader := i.IsLeader()
+	if isLeader && numPeers > 1 {
+		future := i.raft.RemoveServer(raft.ServerID(i.name), 0, 0)
+		if err := future.Error(); err != nil {
+			i.logger.Printf("[ERR] failed to remove ourself as raft peer: %v", err)
+		}
+	}
+	if i.serf != nil {
+		if err := i.serf.Leave(); err != nil {
+			i.logger.Printf("[ERR] failed to leave serf cluster: %v", err)
+		}
+	}
+	i.issueLeaveIntent()
+	// If we were not leader, wait to be safely removed from the cluster. We
+	// must wait to allow the raft replication to take place, otherwise an
+	// immediate shutdown could cause a loss of quorum.
+	if !isLeader {
+		var left bool
+		limit := time.Now().Add(raftRemoveGracePeriod)
+		for !left && time.Now().Before(limit) {
+			time.Sleep(50 * time.Millisecond)
+			future := i.raft.GetConfiguration()
+			if err := future.Error(); err != nil {
+				i.logger.Printf("[ERR] failed to get raft configuration: %v", err)
+				break
+			}
+			left = true
+			for _, server := range future.Configuration().Servers {
+				if server.Address == addr {
+					left = false
+					break
+				}
+			}
+		}
+		if !left {
+			i.logger.Printf("[WARN] failed to leave raft configuration gracefully, timeout")
+		}
+	}
+	return nil
+}
+
+func (i *instance) numPeers() (int, error) {
+	future := i.raft.GetConfiguration()
+	if err := future.Error(); err != nil {
+		return 0, err
+	}
+	configuration := future.Configuration()
+	return len(configuration.Servers), nil
 }
 
 // NewInstance creates a new Huton instance and initializes it and all of its sub-components, such as Serf, Raft, and
@@ -162,6 +203,16 @@ func NewInstance(name string, config *Config) (Instance, error) {
 	if err := i.setupDB(); err != nil {
 		return i, err
 	}
+	i.logger.Println("Initializing RPC server...")
+	if err := i.setupRPC(); err != nil {
+		i.Shutdown()
+		return i, err
+	}
+	i.logger.Println("Initializing Raft cluster...")
+	if err := i.setupRaft(); err != nil {
+		i.Shutdown()
+		return i, err
+	}
 	ip := net.ParseIP(config.BindAddr)
 	raftAddr := &net.TCPAddr{
 		IP:   ip,
@@ -171,42 +222,15 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		IP:   ip,
 		Port: config.BindPort + 2,
 	}
+
 	i.logger.Println("Initializing Serf cluster...")
 	if err := i.setupSerf(raftAddr, rpcAddr); err != nil {
 		i.Shutdown()
 		return i, err
 	}
-	i.logger.Println("Configuring peers...")
-	i.peersMu.Lock()
-	members := i.serf.Members()
-	for _, member := range members {
-		p, err := newPeer(member)
-		if err != nil {
-			i.Shutdown()
-			return i, err
-		}
-		i.peers[p.RaftAddr.String()] = p
-	}
-	i.peersMu.Unlock()
-	i.logger.Println("Initializing Raft cluster...")
-	if err := i.setupRaft(); err != nil {
-		i.Shutdown()
-		return i, err
-	}
-	i.logger.Println("Initializing RPC server...")
-	if err := i.setupRPC(); err != nil {
-		i.Shutdown()
-		return i, err
-	}
-	// Wait for initial leader state
-	i.logger.Println("Waiting for initial leader state...")
-	for {
-		if i.raft.Leader() != "" {
-			break
-		}
-	}
 	go i.handleEvents()
-	return i, nil
+	_, err := i.serf.Join(config.Peers, true)
+	return i, err
 }
 
 func (i *instance) setupDB() error {
@@ -237,9 +261,11 @@ func (i *instance) handleEvents() {
 	}
 }
 
-func (i *instance) isLeader() bool {
-	if i.raft == nil {
-		return false
+func (i *instance) issueLeaveIntent() {
+	t := typeLeaveCluster
+	cmd := &huton_proto.Command{
+		Type: &t,
+		Body: []byte(i.name),
 	}
-	return i.raft.State() == raft.Leader
+	i.apply(cmd)
 }
