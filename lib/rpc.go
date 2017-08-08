@@ -1,16 +1,17 @@
 package huton
 
 import (
+	"net"
+	"strconv"
+
 	"github.com/jonbonazza/huton/lib/proto"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-	"net"
-	"strconv"
 )
 
 func (i *instance) setupRPC() (err error) {
-	addr := net.JoinHostPort(i.config.BindAddr, strconv.Itoa(i.config.BindPort+2))
+	addr := net.JoinHostPort(i.bindAddr, strconv.Itoa(i.bindPort+2))
 	i.rpcListener, err = net.Listen("tcp", addr)
 	if err != nil {
 		return

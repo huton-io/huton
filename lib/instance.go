@@ -47,26 +47,35 @@ type Instance interface {
 }
 
 type instance struct {
-	name             string
-	serf             *serf.Serf
-	raft             *raft.Raft
-	raftBoltStore    *raftboltdb.BoltStore
-	raftTransport    *raft.NetworkTransport
-	dbFilePath       string
-	db               *bolt.DB
-	rpcListener      net.Listener
-	rpc              *grpc.Server
-	serfEventChannel chan serf.Event
-	shutdownCh       chan struct{}
-	peersMu          sync.Mutex
-	peers            map[string]*Peer
-	dbMu             sync.Mutex
-	config           *Config
-	buckets          map[string]*bucket
-	logger           *log.Logger
-	raftNotifyCh     chan bool
-	shutdownLock     sync.Mutex
-	shutdown         bool
+	name                    string
+	bindAddr                string
+	bindPort                int
+	baseDir                 string
+	bootstrap               bool
+	bootstrapExpect         int
+	serf                    *serf.Serf
+	raft                    *raft.Raft
+	raftBoltStore           *raftboltdb.BoltStore
+	raftTransport           *raft.NetworkTransport
+	raftTransportTimeout    time.Duration
+	raftApplicationRetries  int
+	raftApplicationTimeout  time.Duration
+	raftRetainSnapshotCount int
+	dbFilePath              string
+	db                      *bolt.DB
+	dbTimeout               time.Duration
+	rpcListener             net.Listener
+	rpc                     *grpc.Server
+	serfEventChannel        chan serf.Event
+	shutdownCh              chan struct{}
+	peersMu                 sync.Mutex
+	peers                   map[string]*Peer
+	dbMu                    sync.Mutex
+	buckets                 map[string]*bucket
+	logger                  *log.Logger
+	raftNotifyCh            chan bool
+	shutdownLock            sync.Mutex
+	shutdown                bool
 }
 
 func (i *instance) Bucket(name string) (Bucket, error) {
@@ -190,14 +199,35 @@ func NewInstance(name string, config *Config) (Instance, error) {
 	if config.LogOutput == nil {
 		config.LogOutput = ioutil.Discard
 	}
+	dbTimeout, err := time.ParseDuration(config.CacheDBTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse db timeout duration: %s", err)
+	}
+	raftTransportTimeout, err := time.ParseDuration(config.RaftTransportTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse raft transport timeout duration: %s", err)
+	}
+	raftApplicationTimeout, err := time.ParseDuration(config.RaftApplicationTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse raft application timeout duration: %s", err)
+	}
 	i := &instance{
-		name:       name,
-		shutdownCh: make(chan struct{}),
-		peers:      make(map[string]*Peer),
-		config:     config,
-		buckets:    make(map[string]*bucket),
-		dbFilePath: filepath.Join(config.BaseDir, name, "store.db"),
-		logger:     log.New(config.LogOutput, "huton", log.LstdFlags),
+		name:                    name,
+		bindAddr:                config.BindAddr,
+		bindPort:                config.BindPort,
+		baseDir:                 config.BaseDir,
+		bootstrap:               config.Bootstrap,
+		bootstrapExpect:         config.BootstrapExpect,
+		shutdownCh:              make(chan struct{}),
+		peers:                   make(map[string]*Peer),
+		buckets:                 make(map[string]*bucket),
+		dbFilePath:              filepath.Join(config.BaseDir, name, "store.db"),
+		dbTimeout:               dbTimeout,
+		logger:                  log.New(config.LogOutput, "huton", log.LstdFlags),
+		raftApplicationRetries:  config.RaftApplicationRetries,
+		raftApplicationTimeout:  raftApplicationTimeout,
+		raftTransportTimeout:    raftTransportTimeout,
+		raftRetainSnapshotCount: config.RaftRetainSnapshotCount,
 	}
 	i.logger.Println("Initializing datastore...")
 	if err := i.setupDB(); err != nil {
@@ -209,7 +239,7 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		return i, err
 	}
 	i.logger.Println("Initializing Raft cluster...")
-	if err := i.setupRaft(); err != nil {
+	if err := i.setupRaft(config.LogOutput); err != nil {
 		i.Shutdown()
 		return i, err
 	}
@@ -229,17 +259,13 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		return i, err
 	}
 	go i.handleEvents()
-	_, err := i.serf.Join(config.Peers, true)
+	_, err = i.serf.Join(config.Peers, true)
 	return i, err
 }
 
 func (i *instance) setupDB() error {
-	timeout, err := time.ParseDuration(i.config.CacheDBTimeout)
-	if err != nil {
-		return fmt.Errorf("Failed to parse duration: %s", err)
-	}
 	cachesDB, err := bolt.Open(i.dbFilePath, 0644, &bolt.Options{
-		Timeout: timeout,
+		Timeout: i.dbTimeout,
 	})
 	if err != nil {
 		return fmt.Errorf("Failed to open DB file %s: %s", i.dbFilePath, err)
@@ -251,7 +277,7 @@ func (i *instance) setupDB() error {
 func (i *instance) handleEvents() {
 	for {
 		select {
-		case e := <-i.config.SerfEventChannel:
+		case e := <-i.serfEventChannel:
 			i.handleSerfEvent(e)
 		case <-i.serf.ShutdownCh():
 			i.Shutdown()

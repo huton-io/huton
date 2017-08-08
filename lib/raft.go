@@ -1,10 +1,10 @@
 package huton
 
 import (
+	"io"
 	"net"
 	"os"
 	"path/filepath"
-	"time"
 
 	"fmt"
 
@@ -18,20 +18,17 @@ const (
 	raftLogCacheSize = 512
 )
 
-func (i *instance) setupRaft() error {
-	t, err := time.ParseDuration(i.config.RaftTransportTimeout)
-	if err != nil {
-		return err
-	}
+func (i *instance) setupRaft(logWriter io.Writer) error {
 	addr := &net.TCPAddr{
-		IP:   net.ParseIP(i.config.BindAddr),
-		Port: i.config.BindPort + 1,
+		IP:   net.ParseIP(i.bindAddr),
+		Port: i.bindPort + 1,
 	}
-	i.raftTransport, err = raft.NewTCPTransport(addr.String(), addr, i.config.RaftMaxPool, t, i.config.LogOutput)
+	var err error
+	i.raftTransport, err = raft.NewTCPTransport(addr.String(), addr, 3, i.raftTransportTimeout, logWriter)
 	if err != nil {
 		return err
 	}
-	basePath := filepath.Join(i.config.BaseDir, i.name)
+	basePath := filepath.Join(i.baseDir, i.name)
 	if err := EnsurePath(basePath, true); err != nil {
 		return err
 	}
@@ -43,11 +40,11 @@ func (i *instance) setupRaft() error {
 	if err != nil {
 		return err
 	}
-	snapshotStore, err := raft.NewFileSnapshotStore(basePath, i.config.RaftRetainSnapshotCount, i.config.LogOutput)
+	snapshotStore, err := raft.NewFileSnapshotStore(basePath, i.raftRetainSnapshotCount, logWriter)
 	if err != nil {
 		return err
 	}
-	raftConfig := i.getRaftConfig()
+	raftConfig := i.getRaftConfig(logWriter)
 	peersFile := filepath.Join(basePath, "peers.json")
 	if _, err := os.Stat(peersFile); err == nil {
 		configuration, err := raft.ReadConfigJSON(peersFile)
@@ -61,7 +58,7 @@ func (i *instance) setupRaft() error {
 			return fmt.Errorf("recovery failed to delete peers.json, please delete manually: %v", err)
 		}
 	}
-	if i.config.Bootstrap {
+	if i.bootstrap {
 		hasState, err := raft.HasExistingState(cacheStore, i.raftBoltStore, snapshotStore)
 		if err != nil {
 			return err
@@ -87,10 +84,10 @@ func (i *instance) setupRaft() error {
 	return err
 }
 
-func (i *instance) getRaftConfig() *raft.Config {
+func (i *instance) getRaftConfig(logWriter io.Writer) *raft.Config {
 	raftConfig := raft.DefaultConfig()
 	raftConfig.LocalID = raft.ServerID(i.name)
-	raftConfig.LogOutput = i.config.LogOutput
+	raftConfig.LogOutput = logWriter
 	raftConfig.ShutdownOnRemove = false
 	return raftConfig
 }
@@ -110,9 +107,5 @@ func (i *instance) apply(cmd *huton_proto.Command) error {
 	if err != nil {
 		return err
 	}
-	timeout, err := time.ParseDuration(i.config.RaftApplicationTimeout)
-	if err != nil {
-		return err
-	}
-	return i.raft.Apply(b, timeout).Error()
+	return i.raft.Apply(b, i.raftApplicationTimeout).Error()
 }
