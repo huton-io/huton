@@ -6,7 +6,7 @@ import (
 
 func TestCacheSet(t *testing.T) {
 	c := newCache("test", nil)
-	b := c.NewBatch(2, 1000)
+	b := c.NewBatch(2, 1000).(*segment)
 	err := b.Set([]byte("test"), []byte("testVal"))
 	if err != nil {
 		t.Errorf("Err while setting kvp: %s", err)
@@ -15,7 +15,7 @@ func TestCacheSet(t *testing.T) {
 	if err != nil {
 		t.Errorf("Err while setting kvp: %s", err)
 	}
-	err = c.executeBatch(b)
+	err = c.executeSegment(b)
 	if err != nil {
 		t.Errorf("Err while executing batch: %s", err)
 	}
@@ -31,7 +31,7 @@ func TestCacheSet(t *testing.T) {
 
 func TestCacheDel(t *testing.T) {
 	c := newCache("test", nil)
-	b := c.NewBatch(2, 1000)
+	b := c.NewBatch(2, 1000).(*segment)
 	err := b.Set([]byte("test"), []byte("testVal"))
 	if err != nil {
 		t.Errorf("Err while setting kvp: %s", err)
@@ -40,16 +40,16 @@ func TestCacheDel(t *testing.T) {
 	if err != nil {
 		t.Errorf("Err while setting kvp: %s", err)
 	}
-	err = c.executeBatch(b)
+	err = c.executeSegment(b)
 	if err != nil {
 		t.Errorf("Err while executing batch: %s", err)
 	}
-	b = c.NewBatch(1, 1000)
+	b = c.NewBatch(1, 1000).(*segment)
 	err = b.Del([]byte("test"))
 	if err != nil {
 		t.Errorf("Err while deleting key: %s", err)
 	}
-	err = c.executeBatch(b)
+	err = c.executeSegment(b)
 	if err != nil {
 		t.Errorf("Err while executing batch: %s", err)
 	}

@@ -44,7 +44,7 @@ func (i *instance) applyCacheBatch(cmd *huton_proto.CacheBatch) {
 			buf:  cmd.Buf,
 			meta: cmd.Meta,
 		}
-		err := c.(*cache).executeBatch(seg)
+		err := c.(*cache).executeSegment(seg)
 		if err != nil {
 			break
 		}

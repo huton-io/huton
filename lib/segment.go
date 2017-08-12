@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"sort"
-	"sync"
 )
 
 const (
@@ -21,17 +20,17 @@ const (
 )
 
 var (
-	ErrKeyTooLarge      = errors.New("key is too large")
-	ErrValTooLarge      = errors.New("value is too large")
-	ErrAlreadyCommitted = errors.New("Batch is already committed")
+	// ErrKeyTooLarge is an error returned when the size of a key exceeds the maximum key size.
+	ErrKeyTooLarge = errors.New("key is too large")
+
+	// ErrValTooLarge is an error returned when the size of a value exceeds the maximum value size.
+	ErrValTooLarge = errors.New("value is too large")
 )
 
 type segment struct {
 	buf          []byte
 	meta         []uint64
 	sorterCh     chan bool
-	commitMu     sync.Mutex
-	commited     bool
 	waitSortedCh chan struct{}
 }
 
@@ -144,22 +143,7 @@ func (s *segment) readyDeferredSort() {
 	s.waitSortedCh = make(chan struct{})
 }
 
-func (s *segment) isCommitted() bool {
-	s.commitMu.Lock()
-	defer s.commitMu.Unlock()
-	return s.commited
-}
-
-func (s *segment) markCommitted() {
-	s.commitMu.Lock()
-	defer s.commitMu.Unlock()
-	s.commited = true
-}
-
 func (s *segment) mutate(op uint64, key, val []byte) error {
-	if s.isCommitted() {
-		return ErrAlreadyCommitted
-	}
 	keyStart := len(s.buf)
 	s.buf = append(s.buf, key...)
 	keyLength := len(s.buf) - keyStart
