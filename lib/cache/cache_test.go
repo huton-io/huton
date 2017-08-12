@@ -19,11 +19,11 @@ func TestCacheSet(t *testing.T) {
 	if err != nil {
 		t.Errorf("Err while executing batch: %s", err)
 	}
-	val := c.Get([]byte("test"))
+	val := c.Snapshot().Get([]byte("test"))
 	if string(val) != "testVal" {
 		t.Errorf("value %s not equal to 'testVal'", string(val))
 	}
-	val = c.Get([]byte("test2"))
+	val = c.Snapshot().Get([]byte("test2"))
 	if string(val) != "testVal2" {
 		t.Errorf("value %s not equal to 'testVal2'", string(val))
 	}
@@ -53,11 +53,11 @@ func TestCacheDel(t *testing.T) {
 	if err != nil {
 		t.Errorf("Err while executing batch: %s", err)
 	}
-	val := c.Get([]byte("test2"))
+	val := c.Snapshot().Get([]byte("test2"))
 	if string(val) != "testVal2" {
 		t.Errorf("value %s not equal to 'testVal2'", string(val))
 	}
-	val = c.Get([]byte("test"))
+	val = c.Snapshot().Get([]byte("test"))
 	if val != nil {
 		t.Errorf("Expected nil val but got %v", val)
 	}

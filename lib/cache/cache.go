@@ -21,7 +21,6 @@ type Snapshot interface {
 type Cache interface {
 	NewBatch(totalOps, totalBufSize int) Batch
 	ExecuteBatch(batch Batch) error
-	Get(key []byte) []byte
 	Snapshot() Snapshot
 }
 
@@ -51,19 +50,14 @@ func (c *cache) ExecuteBatch(batch Batch) error {
 	return nil
 }
 
-func (c *cache) Get(key []byte) []byte {
-	c.mu.Lock()
-	stack := c.stack
-	c.mu.Unlock()
-	return stack.Get(key)
-}
-
 func (c *cache) Snapshot() Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return &segmentStack{
+	s := &segmentStack{
 		segments: make([]*segment, 0, len(c.stack.segments)),
 	}
+	s.segments = append(s.segments, c.stack.segments...)
+	return s
 }
 
 func (c *cache) pushToStack(seg *segment) {
