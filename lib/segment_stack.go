@@ -1,4 +1,4 @@
-package cache
+package huton
 
 import "sync"
 
@@ -10,7 +10,7 @@ type segmentStack struct {
 func (s *segmentStack) Get(key []byte) []byte {
 	segStart := len(s.segments) - 1
 	if segStart >= 0 {
-		s.sort(0, segStart)
+		s.ensureSorted(0, segStart)
 		for i := segStart; i >= 0; i-- {
 			segment := s.segments[i]
 			op, val := segment.get(key)
@@ -25,7 +25,7 @@ func (s *segmentStack) Get(key []byte) []byte {
 	return nil
 }
 
-func (s *segmentStack) sort(minSeg, maxSeg int) {
+func (s *segmentStack) ensureSorted(minSeg, maxSeg int) {
 	sorted := true
 	for seg := maxSeg; seg >= minSeg; seg-- {
 		sorted = sorted && s.segments[seg].requestSort(false)

@@ -2,68 +2,55 @@ package huton
 
 import (
 	"io"
-	"os"
 
-	"github.com/boltdb/bolt"
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/raft"
 	"github.com/jonbonazza/huton/lib/proto"
 )
 
 const (
-	typeCachePut uint32 = iota
-	typeCacheDelete
+	typeCacheExecute uint32 = iota
 	typeLeaveCluster
 )
 
 func (i *instance) Apply(l *raft.Log) interface{} {
-	for j := 0; j <= i.raftApplicationRetries; j++ {
-		var cmd huton_proto.Command
-		if err := proto.Unmarshal(l.Data, &cmd); err == nil {
-			i.applyCommand(&cmd)
-			break
-		}
+	var cmd huton_proto.Command
+	if err := proto.Unmarshal(l.Data, &cmd); err != nil {
+		return err
 	}
+	i.applyCommand(&cmd)
 	return nil
 }
 
 func (i *instance) applyCommand(cmd *huton_proto.Command) {
 	for j := 0; j <= i.raftApplicationRetries; j++ {
 		switch *cmd.Type {
-		case typeCachePut:
-			var cachePutCmd huton_proto.CachePutCommand
-			if err := proto.Unmarshal(cmd.Body, &cachePutCmd); err != nil {
+		case typeCacheExecute:
+			var cacheBatchCmd huton_proto.CacheBatch
+			if err := proto.Unmarshal(cmd.Body, &cacheBatchCmd); err != nil {
 				continue
 			}
-			i.applyCachePut(&cachePutCmd)
-		case typeCacheDelete:
-			var cacheDeleteCmd huton_proto.CacheDeleteCommand
-			if err := proto.Unmarshal(cmd.Body, &cacheDeleteCmd); err != nil {
-				continue
-			}
-			i.applyCacheDelete(&cacheDeleteCmd)
+			i.applyCacheBatch(&cacheBatchCmd)
 		case typeLeaveCluster:
 			i.applyLeaveCluster(string(cmd.Body))
 		}
 	}
 }
 
-func (i *instance) applyCachePut(cmd *huton_proto.CachePutCommand) {
+func (i *instance) applyCacheBatch(cmd *huton_proto.CacheBatch) {
 	for j := 0; j <= i.raftApplicationRetries; j++ {
-		if c, err := i.Bucket(*cmd.CacheName); err == nil {
-			if err := c.(*bucket).set(cmd.Key, cmd.Value); err == nil {
-				break
-			}
+		c := i.Cache(*cmd.CacheName)
+		seg := &segment{
+			buf:  cmd.Buf,
+			meta: cmd.Meta,
 		}
-	}
-}
-
-func (i *instance) applyCacheDelete(cmd *huton_proto.CacheDeleteCommand) {
-	for j := 0; j <= i.raftApplicationRetries; j++ {
-		if c, err := i.Bucket(*cmd.CacheName); err == nil {
-			if err := c.(*bucket).del(cmd.Key); err == nil {
-				break
-			}
+		err := c.(*cache).executeBatch(seg)
+		if err != nil {
+			break
+		}
+		i.logger.Printf("[ERR] failed to execute batch: %v", err)
+		if j < i.raftApplicationRetries {
+			i.logger.Println("[INFO] retrying batch execution...")
 		}
 	}
 }
@@ -77,43 +64,17 @@ func (i *instance) applyLeaveCluster(name string) {
 }
 
 func (i *instance) Snapshot() (raft.FSMSnapshot, error) {
-	return &fsmSnapshot{
-		db: i.db,
-	}, nil
+	return &fsmSnapshot{}, nil
 }
 
 func (i *instance) Restore(rc io.ReadCloser) error {
-	if i.db != nil {
-		if err := i.db.Close(); err != nil {
-			return err
-		}
-	}
-	if err := func() error {
-		f, err := os.OpenFile(i.dbFilePath, os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		_, err = io.Copy(f, rc)
-		return err
-	}(); err != nil {
-		return err
-	}
-	if err := i.setupDB(); err != nil {
-		return err
-	}
 	return nil
 }
 
-type fsmSnapshot struct {
-	db *bolt.DB
-}
+type fsmSnapshot struct{}
 
 func (f *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
-	return f.db.View(func(tx *bolt.Tx) error {
-		_, err := tx.WriteTo(sink)
-		return err
-	})
+	return nil
 }
 
 func (f *fsmSnapshot) Release() {

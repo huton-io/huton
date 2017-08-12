@@ -2,15 +2,10 @@ syntax = "proto2";
 
 package huton_proto;
 
-message CachePutCommand {
+message CacheBatch {
     required string cache_name = 1;
-    required bytes key = 2;
-    required bytes value = 3;
-}
-
-message CacheDeleteCommand {
-    required string cache_name = 1;
-    required bytes key = 2;
+    required bytes buf = 2;
+    repeated uint64 meta = 3;
 }
 
 

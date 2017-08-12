@@ -1,11 +1,11 @@
-package cache
+package huton
 
 import (
 	"testing"
 )
 
 func TestCacheSet(t *testing.T) {
-	c := NewCache()
+	c := newCache("test", nil)
 	b := c.NewBatch(2, 1000)
 	err := b.Set([]byte("test"), []byte("testVal"))
 	if err != nil {
@@ -15,7 +15,7 @@ func TestCacheSet(t *testing.T) {
 	if err != nil {
 		t.Errorf("Err while setting kvp: %s", err)
 	}
-	err = c.ExecuteBatch(b)
+	err = c.executeBatch(b)
 	if err != nil {
 		t.Errorf("Err while executing batch: %s", err)
 	}
@@ -30,7 +30,7 @@ func TestCacheSet(t *testing.T) {
 }
 
 func TestCacheDel(t *testing.T) {
-	c := NewCache()
+	c := newCache("test", nil)
 	b := c.NewBatch(2, 1000)
 	err := b.Set([]byte("test"), []byte("testVal"))
 	if err != nil {
@@ -40,7 +40,7 @@ func TestCacheDel(t *testing.T) {
 	if err != nil {
 		t.Errorf("Err while setting kvp: %s", err)
 	}
-	err = c.ExecuteBatch(b)
+	err = c.executeBatch(b)
 	if err != nil {
 		t.Errorf("Err while executing batch: %s", err)
 	}
@@ -49,7 +49,7 @@ func TestCacheDel(t *testing.T) {
 	if err != nil {
 		t.Errorf("Err while deleting key: %s", err)
 	}
-	err = c.ExecuteBatch(b)
+	err = c.executeBatch(b)
 	if err != nil {
 		t.Errorf("Err while executing batch: %s", err)
 	}

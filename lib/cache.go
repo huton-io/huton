@@ -1,4 +1,4 @@
-package cache
+package huton
 
 import (
 	"errors"
@@ -25,6 +25,8 @@ type Cache interface {
 }
 
 type cache struct {
+	name           string
+	instance       *instance
 	stack          *segmentStack
 	mu             sync.Mutex
 	stackDirtyCond *sync.Cond
@@ -35,6 +37,10 @@ func (c *cache) NewBatch(totalOps, totalBufSize int) Batch {
 }
 
 func (c *cache) ExecuteBatch(batch Batch) error {
+	return nil
+}
+
+func (c *cache) executeBatch(batch Batch) error {
 	seg, ok := batch.(*segment)
 	if !ok {
 		return ErrWrongBatchType
@@ -42,7 +48,7 @@ func (c *cache) ExecuteBatch(batch Batch) error {
 	if seg.isEmpty() {
 		return nil
 	}
-	seg.Sort()
+	seg.readyDeferredSort()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.pushToStack(seg)
@@ -69,8 +75,11 @@ func (c *cache) pushToStack(seg *segment) {
 	c.stack.segments = append(c.stack.segments, seg)
 }
 
-func NewCache() Cache {
-	c := &cache{}
+func newCache(name string, inst *instance) *cache {
+	c := &cache{
+		name:     name,
+		instance: inst,
+	}
 	c.stackDirtyCond = sync.NewCond(&c.mu)
 	return c
 }

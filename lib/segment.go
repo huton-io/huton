@@ -1,4 +1,4 @@
-package cache
+package huton
 
 import (
 	"bytes"
@@ -137,8 +137,11 @@ func (s *segment) requestSort(synchronous bool) bool {
 	return false
 }
 
-func (s *segment) Sort() {
-	sort.Sort(s)
+func (s *segment) readyDeferredSort() {
+	s.sorterCh = make(chan bool, 1)
+	s.sorterCh <- true
+	close(s.sorterCh)
+	s.waitSortedCh = make(chan struct{})
 }
 
 func (s *segment) isCommitted() bool {
