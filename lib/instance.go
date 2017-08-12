@@ -228,6 +228,7 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		raftApplicationTimeout:  raftApplicationTimeout,
 		raftTransportTimeout:    raftTransportTimeout,
 		raftRetainSnapshotCount: config.RaftRetainSnapshotCount,
+		serfEventChannel:        config.SerfEventChannel,
 	}
 	i.logger.Println("Initializing datastore...")
 	if err := i.setupDB(); err != nil {
