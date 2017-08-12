@@ -66,6 +66,8 @@ func (i *instance) peerJoined(event serf.MemberEvent) {
 		if i.bootstrapExpect > 0 {
 			i.logger.Printf("[INFO] testing bootstrap")
 			i.maybeBootstrap()
+		} else if i.IsLeader() {
+			i.raft.AddVoter(raft.ServerID(peer.Name), raft.ServerAddress(peer.RaftAddr.String()), 0, 0)
 		}
 	}
 }
