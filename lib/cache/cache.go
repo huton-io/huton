@@ -5,10 +5,6 @@ import (
 	"sync"
 )
 
-const (
-	maxBatchBufSize = 0
-)
-
 var (
 	ErrWrongBatchType = errors.New("wrong batch implementation type")
 )
@@ -50,9 +46,6 @@ func (c *cache) ExecuteBatch(batch Batch) error {
 	seg.Sort()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for c.stack.segments != nil && len(c.stack.segments) >= maxBatchBufSize {
-		c.stackDirtyCond.Wait()
-	}
 	c.pushToStack(seg)
 	seg.markCommitted()
 	return nil
@@ -80,4 +73,10 @@ func (c *cache) pushToStack(seg *segment) {
 		}
 	}
 	c.stack.segments = append(c.stack.segments, seg)
+}
+
+func NewCache() Cache {
+	c := &cache{}
+	c.stackDirtyCond = sync.NewCond(&c.mu)
+	return c
 }

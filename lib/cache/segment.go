@@ -9,7 +9,7 @@ import (
 
 const (
 	opSet = uint64(0x0100000000000000)
-	opDel = uint64(0x0100000000000000)
+	opDel = uint64(0x0200000000000000)
 
 	maxKeyLength = 1<<24 - 1
 	maxValLength = 1<<28 - 1
