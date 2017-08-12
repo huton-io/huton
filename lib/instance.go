@@ -29,9 +29,7 @@ var (
 
 // Instance is an interface for the Huton instance.
 type Instance interface {
-	// Bucket returns the bucket in the off-heap database with the given name.
-	// If the bucket doesn't exist, it is automatically created.
-	Bucket(name string) (Bucket, error)
+	Cache(name string) Cache
 	// Peers returns the current list of cluster peers. The list includes the local peer.
 	Peers() []*Peer
 	// Local returns the local peer.
@@ -71,20 +69,22 @@ type instance struct {
 	peersMu                 sync.Mutex
 	peers                   map[string]*Peer
 	dbMu                    sync.Mutex
-	buckets                 map[string]*bucket
+	caches                  map[string]*cache
 	logger                  *log.Logger
 	raftNotifyCh            chan bool
 	shutdownLock            sync.Mutex
 	shutdown                bool
 }
 
-func (i *instance) Bucket(name string) (Bucket, error) {
+func (i *instance) Cache(name string) Cache {
 	i.dbMu.Lock()
 	defer i.dbMu.Unlock()
-	if c, ok := i.buckets[name]; ok {
-		return c, nil
+	if c, ok := i.caches[name]; ok {
+		return c
 	}
-	return newBucket(i.db, name, i)
+	dc := newCache(name, i)
+	i.caches[name] = dc
+	return dc
 }
 
 func (i *instance) Join(addrs []string) (int, error) {
@@ -220,7 +220,7 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		bootstrapExpect:         config.BootstrapExpect,
 		shutdownCh:              make(chan struct{}),
 		peers:                   make(map[string]*Peer),
-		buckets:                 make(map[string]*bucket),
+		caches:                  make(map[string]*cache),
 		dbFilePath:              filepath.Join(config.BaseDir, name, "store.db"),
 		dbTimeout:               dbTimeout,
 		logger:                  log.New(config.LogOutput, "huton", log.LstdFlags),
@@ -229,10 +229,6 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		raftTransportTimeout:    raftTransportTimeout,
 		raftRetainSnapshotCount: config.RaftRetainSnapshotCount,
 		serfEventChannel:        config.SerfEventChannel,
-	}
-	i.logger.Println("Initializing datastore...")
-	if err := i.setupDB(); err != nil {
-		return i, err
 	}
 	i.logger.Println("Initializing RPC server...")
 	if err := i.setupRPC(); err != nil {
@@ -262,17 +258,6 @@ func NewInstance(name string, config *Config) (Instance, error) {
 	go i.handleEvents()
 	_, err = i.serf.Join(config.Peers, true)
 	return i, err
-}
-
-func (i *instance) setupDB() error {
-	cachesDB, err := bolt.Open(i.dbFilePath, 0644, &bolt.Options{
-		Timeout: i.dbTimeout,
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to open DB file %s: %s", i.dbFilePath, err)
-	}
-	i.db = cachesDB
-	return nil
 }
 
 func (i *instance) handleEvents() {
