@@ -1,6 +1,7 @@
 package huton
 
 import (
+	"errors"
 	"io"
 
 	"github.com/golang/protobuf/proto"
@@ -11,6 +12,10 @@ import (
 const (
 	typeCacheExecute uint32 = iota
 	typeLeaveCluster
+)
+
+var (
+	errSnapshotsNotSupported = errors.New("snapshots not supported")
 )
 
 func (i *instance) Apply(l *raft.Log) interface{} {
@@ -64,18 +69,9 @@ func (i *instance) applyLeaveCluster(name string) {
 }
 
 func (i *instance) Snapshot() (raft.FSMSnapshot, error) {
-	return &fsmSnapshot{}, nil
+	return nil, errSnapshotsNotSupported
 }
 
 func (i *instance) Restore(rc io.ReadCloser) error {
 	return nil
-}
-
-type fsmSnapshot struct{}
-
-func (f *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
-	return nil
-}
-
-func (f *fsmSnapshot) Release() {
 }
