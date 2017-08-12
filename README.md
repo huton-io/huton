@@ -1,16 +1,16 @@
 # huton
-Huton is an embeddable and distributed in-memory key-value store inspired by the likes of [Redis](https://redis.io/) and [memcached](https://memcached.org/) and written in the Go programming language. Data is stored in a replicated [boltdb](https://github.com/boltdb/bolt) database. This database is a single, memory-mapped file providing extremely quick access to off-heap memory.
+Huton is an embeddable and distributed in-memory key-value store inspired by the likes of [Redis](https://redis.io/) and [memcached](https://memcached.org/) and written in the Go programming language.
 
 Replication is handled via the [Raft](https://raft.github.io/) consensus algorithm and data is replicated to all members of the cluster. Existing cluster members will see near-immediate consistency, while new members coming online will see eventual consistency.
 
-Huton is considered **prototype** status, and is not yet indended for production use. It is under active development and welcomes contributions.
+Huton is considered **prototype** status, and is not yet ready for production use. It is under active development and welcomes contributions.
 
 # Example Usage
 Huton currently expects a quorum of nodes before the cluster is considered stable. This means that you need _at least_ 3 nodes to complete a cluster.
 To begin, start two huton agents:
 ```bash
-$ huton agent -name agent1 -bindPort 8100
-$ huton agent -name agent2 -bindPort 8200 -peers 127.0.0.1:8100
+$ huton agent -name agent1 -bindPort 8100 -expect 2
+$ huton agent -name agent2 -bindPort 8200 -peers 127.0.0.1:8100 -expect 2
 ```
 Huton requires that the name of each node in a cluster be unique. If one or more nodes have the same name, this can cause havoc with the internal peer list.
 
@@ -64,21 +64,23 @@ func main() {
 
 func handler(instance huton.Instance) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		bucket, err := instance.Bucket("exampleBucket")
+		cache, err := instance.Cache("exampleBucket")
 		if err != nil {
 			http.Error(w, "Failed to get bucket.", http.StatusInternalServerError)
 			return
 		}
 		switch req.Method {
 		case http.MethodGet:
-			if err = bucket.Get([]byte("key"), func(val []byte {
-				w.Write(val)
-			}); err != nil {
+			ss := cache.Snapshot()
+			val := ss.Get([]byte("key"))
+			w.Write(val)
+		case http.MethodPost:
+			batch := cache.NewBatch(1, 8)
+			if err = batch.Set([]byte("key"), []byte("value")); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-		case http.MethodPost:
-			if err = bucket.Set([]byte("key"), []byte("value")); err != nil {
+			if err = cache.ExecuteBatch(batch); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 		}
