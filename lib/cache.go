@@ -44,11 +44,10 @@ type Cache interface {
 }
 
 type cache struct {
-	name           string
-	instance       *instance
-	stack          *segmentStack
-	mu             sync.Mutex
-	stackDirtyCond *sync.Cond
+	name     string
+	instance *instance
+	stack    *segmentStack
+	mu       sync.Mutex
 }
 
 func (c *cache) NewBatch(totalOps, totalBufSize int) Batch {
@@ -111,6 +110,5 @@ func newCache(name string, inst *instance) *cache {
 		name:     name,
 		instance: inst,
 	}
-	c.stackDirtyCond = sync.NewCond(&c.mu)
 	return c
 }

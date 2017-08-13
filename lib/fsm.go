@@ -1,6 +1,7 @@
 package huton
 
 import (
+	"encoding/binary"
 	"errors"
 	"io"
 
@@ -69,9 +70,52 @@ func (i *instance) applyLeaveCluster(name string) {
 }
 
 func (i *instance) Snapshot() (raft.FSMSnapshot, error) {
-	return nil, errSnapshotsNotSupported
+	i.dbMu.Lock()
+	defer i.dbMu.Unlock()
+	caches := make([]*cache, 0, len(i.caches))
+	for _, c := range i.caches {
+		caches = append(caches, c)
+	}
+	return &fsmSnapshot{
+		caches: caches,
+	}, nil
 }
 
 func (i *instance) Restore(rc io.ReadCloser) error {
+	i.dbMu.Lock()
+	defer i.dbMu.Unlock()
+	var numCaches int64
+	if err := binary.Read(rc, Endianess, &numCaches); err != nil {
+		return err
+	}
+	caches := make(map[string]*cache)
+	for j := int64(0); j < numCaches; j++ {
+		c, err := loadCache(rc, i)
+		if err != nil {
+			return err
+		}
+		caches[c.name] = c
+	}
+	i.caches = caches
 	return nil
+}
+
+type fsmSnapshot struct {
+	caches []*cache
+}
+
+func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
+	if err := binary.Write(sink, Endianess, int64(len(s.caches))); err != nil {
+		return err
+	}
+	for _, c := range s.caches {
+		if err := c.persist(sink); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *fsmSnapshot) Release() {
+
 }

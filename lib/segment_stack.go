@@ -1,6 +1,8 @@
 package huton
 
-import "sync"
+import (
+	"sync"
+)
 
 type segmentStack struct {
 	segments []*segment
