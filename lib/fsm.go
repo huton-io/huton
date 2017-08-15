@@ -51,7 +51,7 @@ func (i *instance) applyCacheBatch(cmd *huton_proto.CacheBatch) {
 			meta: cmd.Meta,
 		}
 		err := c.(*cache).executeSegment(seg)
-		if err != nil {
+		if err == nil {
 			break
 		}
 		i.logger.Printf("[ERR] failed to execute batch: %v", err)
