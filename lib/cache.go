@@ -44,11 +44,10 @@ type Cache interface {
 }
 
 type cache struct {
-	name           string
-	instance       *instance
-	stack          *segmentStack
-	mu             sync.Mutex
-	stackDirtyCond *sync.Cond
+	name     string
+	instance *instance
+	stack    *segmentStack
+	mu       sync.Mutex
 }
 
 func (c *cache) NewBatch(totalOps, totalBufSize int) Batch {
@@ -90,10 +89,11 @@ func (c *cache) executeSegment(seg *segment) error {
 func (c *cache) Snapshot() Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := &segmentStack{
-		segments: make([]*segment, 0, len(c.stack.segments)),
+	s := &segmentStack{}
+	if c.stack != nil {
+		s.segments = make([]*segment, 0, len(c.stack.segments))
+		s.segments = append(s.segments, c.stack.segments...)
 	}
-	s.segments = append(s.segments, c.stack.segments...)
 	return s
 }
 
@@ -111,6 +111,5 @@ func newCache(name string, inst *instance) *cache {
 		name:     name,
 		instance: inst,
 	}
-	c.stackDirtyCond = sync.NewCond(&c.mu)
 	return c
 }
