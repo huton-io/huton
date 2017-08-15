@@ -89,10 +89,11 @@ func (c *cache) executeSegment(seg *segment) error {
 func (c *cache) Snapshot() Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := &segmentStack{
-		segments: make([]*segment, 0, len(c.stack.segments)),
+	s := &segmentStack{}
+	if c.stack != nil {
+		s.segments = make([]*segment, 0, len(c.stack.segments))
+		s.segments = append(s.segments, c.stack.segments...)
 	}
-	s.segments = append(s.segments, c.stack.segments...)
 	return s
 }
 
