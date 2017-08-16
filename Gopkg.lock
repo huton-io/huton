@@ -74,10 +74,10 @@
   version = "v0.1.0"
 
 [[projects]]
-  branch = "master"
+  branch = "library-v2-stage-one"
   name = "github.com/hashicorp/raft"
   packages = ["."]
-  revision = "ac704075e75b8626023224c76c56be4d6958a5dc"
+  revision = "3a6f3bdfe4fc69e300c6d122b1a92051af6f0b95"
 
 [[projects]]
   branch = "master"
@@ -154,6 +154,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "c1207d3d16972f694e016537fe1e55e8e4fa436b14816f6569262c3a88b5106b"
+  inputs-digest = "bed9ef34bda62008c8a6158909ac08f651c3ce6a85f14cf835ed6286d5a00a39"
   solver-name = "gps-cdcl"
   solver-version = 1

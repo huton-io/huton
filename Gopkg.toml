@@ -30,7 +30,7 @@
   name = "github.com/golang/protobuf"
 
 [[constraint]]
-  branch = "master"
+  branch = "library-v2-stage-one"
   name = "github.com/hashicorp/raft"
 
 [[constraint]]
