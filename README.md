@@ -1,4 +1,6 @@
 # huton
+[![Go Report Card](https://goreportcard.com/badge/github.com/jonbonazza/huton)](https://goreportcard.com/report/github.com/jonbonazza/huton)
+
 Huton is an embeddable and distributed in-memory key-value store inspired by the likes of [Redis](https://redis.io/) and [memcached](https://memcached.org/) and written in the Go programming language.
 
 Replication is handled via the [Raft](https://raft.github.io/) consensus algorithm and data is replicated to all members of the cluster. Existing cluster members will see near-immediate consistency, while new members coming online will see eventual consistency.
