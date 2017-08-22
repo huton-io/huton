@@ -3,14 +3,12 @@ package huton
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
-	"path/filepath"
+	"os"
 	"sync"
 	"time"
 
-	"github.com/boltdb/bolt"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 	"github.com/hashicorp/serf/serf"
@@ -59,9 +57,6 @@ type instance struct {
 	raftApplicationRetries  int
 	raftApplicationTimeout  time.Duration
 	raftRetainSnapshotCount int
-	dbFilePath              string
-	db                      *bolt.DB
-	dbTimeout               time.Duration
 	rpcListener             net.Listener
 	rpc                     *grpc.Server
 	serfEventChannel        chan serf.Event
@@ -122,11 +117,6 @@ func (i *instance) Shutdown() error {
 	if i.rpcListener != nil {
 		if err := i.rpcListener.Close(); err != nil {
 			return fmt.Errorf("Failed to close RPC Listener: %s", err)
-		}
-	}
-	if i.db != nil {
-		if err := i.db.Close(); err != nil {
-			return fmt.Errorf("Failed to close datastore: %s", err)
 		}
 	}
 	return nil
@@ -192,43 +182,25 @@ func (i *instance) numPeers() (int, error) {
 // GRPC server, with the provided configuration.
 //
 // If this function returns successfully, the instance should be considered started and ready for use.
-func NewInstance(name string, config *Config) (Instance, error) {
+func NewInstance(name string, opts ...Option) (Instance, error) {
 	if name == "" {
 		return nil, ErrNoName
 	}
-	if config.LogOutput == nil {
-		config.LogOutput = ioutil.Discard
-	}
-	dbTimeout, err := time.ParseDuration(config.CacheDBTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse db timeout duration: %s", err)
-	}
-	raftTransportTimeout, err := time.ParseDuration(config.RaftTransportTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse raft transport timeout duration: %s", err)
-	}
-	raftApplicationTimeout, err := time.ParseDuration(config.RaftApplicationTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse raft application timeout duration: %s", err)
-	}
 	i := &instance{
 		name:                    name,
-		bindAddr:                config.BindAddr,
-		bindPort:                config.BindPort,
-		baseDir:                 config.BaseDir,
-		bootstrap:               config.Bootstrap,
-		bootstrapExpect:         config.BootstrapExpect,
+		bindAddr:                "127.0.0.1",
+		bindPort:                8100,
 		shutdownCh:              make(chan struct{}),
 		peers:                   make(map[string]*Peer),
 		caches:                  make(map[string]*cache),
-		dbFilePath:              filepath.Join(config.BaseDir, name, "store.db"),
-		dbTimeout:               dbTimeout,
-		logger:                  log.New(config.LogOutput, "huton", log.LstdFlags),
-		raftApplicationRetries:  config.RaftApplicationRetries,
-		raftApplicationTimeout:  raftApplicationTimeout,
-		raftTransportTimeout:    raftTransportTimeout,
-		raftRetainSnapshotCount: config.RaftRetainSnapshotCount,
-		serfEventChannel:        config.SerfEventChannel,
+		logger:                  log.New(os.Stdout, "huton", log.LstdFlags),
+		raftApplicationTimeout:  10 * time.Second,
+		raftTransportTimeout:    10 * time.Second,
+		raftRetainSnapshotCount: 2,
+		serfEventChannel:        make(chan serf.Event, 256),
+	}
+	for _, opt := range opts {
+		opt(i)
 	}
 	i.logger.Println("Initializing RPC server...")
 	if err := i.setupRPC(); err != nil {
@@ -236,18 +208,18 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		return i, err
 	}
 	i.logger.Println("Initializing Raft cluster...")
-	if err := i.setupRaft(config.LogOutput); err != nil {
+	if err := i.setupRaft(); err != nil {
 		i.Shutdown()
 		return i, err
 	}
-	ip := net.ParseIP(config.BindAddr)
+	ip := net.ParseIP(i.bindAddr)
 	raftAddr := &net.TCPAddr{
 		IP:   ip,
-		Port: config.BindPort + 1,
+		Port: i.bindPort + 1,
 	}
 	rpcAddr := &net.TCPAddr{
 		IP:   ip,
-		Port: config.BindPort + 2,
+		Port: i.bindPort + 2,
 	}
 
 	i.logger.Println("Initializing Serf cluster...")
@@ -256,8 +228,7 @@ func NewInstance(name string, config *Config) (Instance, error) {
 		return i, err
 	}
 	go i.handleEvents()
-	_, err = i.serf.Join(config.Peers, true)
-	return i, err
+	return i, nil
 }
 
 func (i *instance) handleEvents() {

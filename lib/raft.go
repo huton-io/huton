@@ -1,7 +1,7 @@
 package huton
 
 import (
-	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -18,13 +18,13 @@ const (
 	raftLogCacheSize = 512
 )
 
-func (i *instance) setupRaft(logWriter io.Writer) error {
+func (i *instance) setupRaft() error {
 	addr := &net.TCPAddr{
 		IP:   net.ParseIP(i.bindAddr),
 		Port: i.bindPort + 1,
 	}
 	var err error
-	i.raftTransport, err = raft.NewTCPTransport(addr.String(), addr, 3, i.raftTransportTimeout, logWriter)
+	i.raftTransport, err = raft.NewTCPTransport(addr.String(), addr, 3, i.raftTransportTimeout, ioutil.Discard)
 	if err != nil {
 		return err
 	}
@@ -40,11 +40,11 @@ func (i *instance) setupRaft(logWriter io.Writer) error {
 	if err != nil {
 		return err
 	}
-	snapshotStore, err := raft.NewFileSnapshotStore(basePath, i.raftRetainSnapshotCount, logWriter)
+	snapshotStore, err := raft.NewFileSnapshotStore(basePath, i.raftRetainSnapshotCount, ioutil.Discard)
 	if err != nil {
 		return err
 	}
-	raftConfig := i.getRaftConfig(logWriter)
+	raftConfig := i.getRaftConfig()
 	peersFile := filepath.Join(basePath, "peers.json")
 	if _, err := os.Stat(peersFile); err == nil {
 		configuration, err := raft.ReadConfigJSON(peersFile)
@@ -84,10 +84,9 @@ func (i *instance) setupRaft(logWriter io.Writer) error {
 	return err
 }
 
-func (i *instance) getRaftConfig(logWriter io.Writer) *raft.Config {
+func (i *instance) getRaftConfig() *raft.Config {
 	raftConfig := raft.DefaultConfig()
 	raftConfig.LocalID = raft.ServerID(i.name)
-	raftConfig.LogOutput = logWriter
 	raftConfig.ShutdownOnRemove = false
 	return raftConfig
 }

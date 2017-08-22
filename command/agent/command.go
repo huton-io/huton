@@ -19,11 +19,16 @@ type Command struct {
 
 // Run is called by the CLI to execute the command.
 func (c *Command) Run(args []string) int {
-	name, config, err := c.readConfig()
+	name, opts, peers, err := c.readConfig()
 	if err != nil {
 		return 1
 	}
-	c.instance, err = huton.NewInstance(name, config)
+	c.instance, err = huton.NewInstance(name, opts...)
+	if err != nil {
+		c.UI.Error(err.Error())
+		return 1
+	}
+	_, err = c.instance.Join(peers)
 	if err != nil {
 		c.UI.Error(err.Error())
 		return 1
@@ -41,23 +46,38 @@ func (c *Command) Help() string {
 	return ""
 }
 
-func (c *Command) readConfig() (string, *huton.Config, error) {
-	config := huton.DefaultConfig()
+func (c *Command) readConfig() (string, []huton.Option, []string, error) {
+	var name string
+	var bindAddr string
+	var bindPort int
+	var bootstrap bool
+	var bootstrapExpect int
+	peers := []string{}
 	flags := flag.NewFlagSet("agent", flag.ContinueOnError)
 	flags.Usage = func() {
 		c.UI.Output(c.Help())
 	}
-	var name string
 	flags.StringVar(&name, "name", "", "unique instance name")
-	flags.StringVar(&config.BindAddr, "bindAddr", config.BindAddr, "address to bind serf to")
-	flags.IntVar(&config.BindPort, "bindPort", config.BindPort, "port to bind serf to")
-	flags.BoolVar(&config.Bootstrap, "bootstrap", config.Bootstrap, "bootstrap mode")
-	flags.IntVar(&config.BootstrapExpect, "expect", config.BootstrapExpect, "bootstrap expect")
-	flags.Var((*command.AppendSliceValue)(&config.Peers), "peers", "peer list")
+	flags.StringVar(&bindAddr, "bindAddr", "", "address to bind serf to")
+	flags.IntVar(&bindPort, "bindPort", -1, "port to bind serf to")
+	flags.BoolVar(&bootstrap, "bootstrap", false, "bootstrap mode")
+	flags.IntVar(&bootstrapExpect, "expect", -1, "bootstrap expect")
+	flags.Var((*command.AppendSliceValue)(&peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	return name, config, nil
+	var opts []huton.Option
+	opts = append(opts, huton.Bootstrap(bootstrap))
+	if bindAddr != "" {
+		opts = append(opts, huton.BindAddr(bindAddr))
+	}
+	if bindPort >= 0 {
+		opts = append(opts, huton.BindPort(bindPort))
+	}
+	if bootstrapExpect >= 0 {
+		opts = append(opts, huton.BootstrapExpect(bootstrapExpect))
+	}
+	return name, opts, peers, nil
 }
 
 func (c *Command) handleSignals() int {
