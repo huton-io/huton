@@ -11,8 +11,8 @@ Huton is considered **prototype** status, and is not yet ready for production us
 Huton currently expects a quorum of nodes before the cluster is considered stable. This means that you need _at least_ 3 nodes to complete a cluster.
 To begin, start two huton agents:
 ```bash
-$ huton agent -name agent1 -bindPort 8100 -expect 2
-$ huton agent -name agent2 -bindPort 8200 -peers 127.0.0.1:8100 -expect 2
+$ huton agent -name agent1 -bindPort 8100 -expect 3
+$ huton agent -name agent2 -bindPort 8200 -peers 127.0.0.1:8100 -expect 3
 ```
 Huton requires that the name of each node in a cluster be unique. If one or more nodes have the same name, this can cause havoc with the internal peer list.
 
@@ -35,7 +35,7 @@ func main() {
 	var port int
 	flag.StringVar(&instanceName, "name", "", "unique instance name")
 	flag.StringVar(&peers, "peers", "", "comma delimited list of seed peers")
-	flag.IntVar(&port, "port", 8100, "bind port")
+	flag.IntVar(&port, "port", 8300, "bind port")
 	flag.Parse()
 	if instanceName == "" {
 		panic("No instance name provided")
@@ -43,10 +43,11 @@ func main() {
 	if peers == "" {
 		panic("No peers provided.")
 	}
-	config := huton.DefaultConfig()
-	config.Peers = strings.Split(peers, ",")
-	config.BindPort = port
-	instance, err := huton.NewInstance(instanceName, config)
+	instance, err := huton.NewInstance(instanceName, huton.BindPort(port), huton.BootstrapExpect(3))
+	if err != nil {
+		panic(err)
+	}
+	_, err = instance.Join(strings.Split(peers, ","))
 	if err != nil {
 		panic(err)
 	}
@@ -91,6 +92,11 @@ func handler(instance huton.Instance) func(w http.ResponseWriter, req *http.Requ
 
 ```
 The above code example illustrates how you can embed Huton within an application.
+
+Start the above program:
+```bash
+go run main.go -name app -bindPort 8300 -peers 127.0.0.1:8100,127.0.0.1:8200
+```
 
 Once all three nodes are started and connected to each other, put some data:
 ```bash
