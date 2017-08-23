@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/base64"
 	"flag"
 	"os"
 	"os/signal"
@@ -52,6 +53,7 @@ func (c *Command) readConfig() (string, []huton.Option, []string, error) {
 	var bindPort int
 	var bootstrap bool
 	var bootstrapExpect int
+	var encryptionKey string
 	peers := []string{}
 	flags := flag.NewFlagSet("agent", flag.ContinueOnError)
 	flags.Usage = func() {
@@ -62,6 +64,7 @@ func (c *Command) readConfig() (string, []huton.Option, []string, error) {
 	flags.IntVar(&bindPort, "bindPort", -1, "port to bind serf to")
 	flags.BoolVar(&bootstrap, "bootstrap", false, "bootstrap mode")
 	flags.IntVar(&bootstrapExpect, "expect", -1, "bootstrap expect")
+	flags.StringVar(&encryptionKey, "encrypt", "", "base64 encoded encryption key")
 	flags.Var((*command.AppendSliceValue)(&peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		return "", nil, nil, err
@@ -76,6 +79,13 @@ func (c *Command) readConfig() (string, []huton.Option, []string, error) {
 	}
 	if bootstrapExpect >= 0 {
 		opts = append(opts, huton.BootstrapExpect(bootstrapExpect))
+	}
+	if encryptionKey != "" {
+		b, err := base64.StdEncoding.DecodeString(encryptionKey)
+		if err != nil {
+			return name, opts, peers, nil
+		}
+		opts = append(opts, huton.EncryptionKey(b))
 	}
 	return name, opts, peers, nil
 }

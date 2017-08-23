@@ -57,6 +57,7 @@ type instance struct {
 	raftApplicationRetries  int
 	raftApplicationTimeout  time.Duration
 	raftRetainSnapshotCount int
+	encryptionKey           []byte
 	rpcListener             net.Listener
 	rpc                     *grpc.Server
 	serfEventChannel        chan serf.Event

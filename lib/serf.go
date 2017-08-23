@@ -1,6 +1,7 @@
 package huton
 
 import (
+	"errors"
 	"net"
 	"strconv"
 
@@ -11,18 +12,25 @@ import (
 )
 
 func (i *instance) setupSerf(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (err error) {
-	serfConfig := i.getSerfConfig(raftAddr, rpcAddr)
+	serfConfig, err := i.getSerfConfig(raftAddr, rpcAddr)
+	if err != nil {
+		return err
+	}
 	i.serf, err = serf.Create(serfConfig)
 	return err
 }
 
-func (i *instance) getSerfConfig(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) *serf.Config {
+func (i *instance) getSerfConfig(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (*serf.Config, error) {
 	serfConfig := serf.DefaultConfig()
 	serfConfig.EnableNameConflictResolution = false
 	serfConfig.MemberlistConfig.BindAddr = i.bindAddr
 	serfConfig.MemberlistConfig.BindPort = i.bindPort
 	serfConfig.NodeName = i.name
 	serfConfig.EventCh = i.serfEventChannel
+	if i.encryptionKey != nil && len(i.encryptionKey) != 32 {
+		return serfConfig, errors.New("invalid encryption key length. Encryption key must be 32-bytes")
+	}
+	serfConfig.MemberlistConfig.SecretKey = i.encryptionKey
 	tags := make(map[string]string)
 	tags["id"] = serfConfig.NodeName
 	tags["raftIP"] = raftAddr.IP.String()
@@ -34,7 +42,7 @@ func (i *instance) getSerfConfig(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) *s
 	}
 	tags["expect"] = strconv.Itoa(i.bootstrapExpect)
 	serfConfig.Tags = tags
-	return serfConfig
+	return serfConfig, nil
 }
 
 func (i *instance) handleSerfEvent(event serf.Event) {

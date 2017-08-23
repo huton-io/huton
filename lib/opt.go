@@ -80,3 +80,11 @@ func LogOutput(w io.Writer) Option {
 		ins.logger = log.New(w, "huton", log.LstdFlags)
 	}
 }
+
+// EncryptionKey sets the secrets key used for encrypting cluster communications.
+// The key MUST be exactly 32 bytes.
+func EncryptionKey(key []byte) Option {
+	return func(ins *instance) {
+		ins.encryptionKey = key
+	}
+}
