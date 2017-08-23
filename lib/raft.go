@@ -29,7 +29,7 @@ func (i *instance) setupRaft() error {
 		return err
 	}
 	basePath := filepath.Join(i.baseDir, i.name)
-	if err := EnsurePath(basePath, true); err != nil {
+	if err := ensurePath(basePath, true); err != nil {
 		return err
 	}
 	i.raftBoltStore, err = raftboltdb.NewBoltStore(filepath.Join(basePath, "raft.db"))

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 )
 
-// EnsurePath is used to make sure a path exists
-func EnsurePath(path string, dir bool) error {
+// ensurePath is used to make sure a path exists
+func ensurePath(path string, dir bool) error {
 	if !dir {
 		path = filepath.Dir(path)
 	}
