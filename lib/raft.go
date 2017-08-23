@@ -24,7 +24,7 @@ func (i *instance) setupRaft() error {
 		Port: i.bindPort + 1,
 	}
 	var err error
-	i.raftTransport, err = raft.NewTCPTransport(addr.String(), addr, 3, i.raftTransportTimeout, ioutil.Discard)
+	i.raftTransport, err = i.getRaftTransport(addr)
 	if err != nil {
 		return err
 	}
@@ -46,18 +46,20 @@ func (i *instance) setupRaft() error {
 	}
 	raftConfig := i.getRaftConfig()
 	peersFile := filepath.Join(basePath, "peers.json")
-	if _, err := os.Stat(peersFile); err == nil {
-		configuration, err := raft.ReadConfigJSON(peersFile)
-		if err != nil {
-			return fmt.Errorf("recovery failed to parse peers.json: %v", err)
-		}
-		if err = raft.RecoverCluster(raftConfig, i, cacheStore, i.raftBoltStore, snapshotStore, i.raftTransport, configuration); err != nil {
-			return fmt.Errorf("recovery failed: %v", err)
-		}
-		if err = os.Remove(peersFile); err != nil {
-			return fmt.Errorf("recovery failed to delete peers.json, please delete manually: %v", err)
-		}
+	if err = i.maybeRecoverRaft(raftConfig, cacheStore, snapshotStore, peersFile); err != nil {
+		return err
 	}
+	if err = i.maybePerformInitialBootstrap(raftConfig, cacheStore, snapshotStore); err != nil {
+		return err
+	}
+	raftNotifyCh := make(chan bool, 1)
+	raftConfig.NotifyCh = raftNotifyCh
+	i.raftNotifyCh = raftNotifyCh
+	i.raft, err = raft.NewRaft(raftConfig, i, cacheStore, i.raftBoltStore, snapshotStore, i.raftTransport)
+	return err
+}
+
+func (i *instance) maybePerformInitialBootstrap(raftConfig *raft.Config, cacheStore *raft.LogCache, snapshotStore raft.SnapshotStore) error {
 	if i.bootstrap {
 		hasState, err := raft.HasExistingState(cacheStore, i.raftBoltStore, snapshotStore)
 		if err != nil {
@@ -77,11 +79,34 @@ func (i *instance) setupRaft() error {
 			}
 		}
 	}
-	raftNotifyCh := make(chan bool, 1)
-	raftConfig.NotifyCh = raftNotifyCh
-	i.raftNotifyCh = raftNotifyCh
-	i.raft, err = raft.NewRaft(raftConfig, i, cacheStore, i.raftBoltStore, snapshotStore, i.raftTransport)
-	return err
+	return nil
+}
+
+func (i *instance) maybeRecoverRaft(
+	raftConfig *raft.Config,
+	cacheStore *raft.LogCache,
+	snapshotStore raft.SnapshotStore,
+	peersFile string) error {
+	if _, err := os.Stat(peersFile); err == nil {
+		configuration, err := raft.ReadConfigJSON(peersFile)
+		if err != nil {
+			return fmt.Errorf("recovery failed to parse peers.json: %v", err)
+		}
+		if err = raft.RecoverCluster(raftConfig, i, cacheStore, i.raftBoltStore, snapshotStore, i.raftTransport, configuration); err != nil {
+			return fmt.Errorf("recovery failed: %v", err)
+		}
+		if err = os.Remove(peersFile); err != nil {
+			return fmt.Errorf("recovery failed to delete peers.json, please delete manually: %v", err)
+		}
+	}
+	return nil
+}
+
+func (i *instance) getRaftTransport(addr net.Addr) (*raft.NetworkTransport, error) {
+	if i.tlsConfig != nil {
+		return newTLSTransport(addr.String(), addr, 3, i.raftTransportTimeout, i.tlsConfig, ioutil.Discard)
+	}
+	return raft.NewTCPTransport(addr.String(), addr, 3, i.raftTransportTimeout, ioutil.Discard)
 }
 
 func (i *instance) getRaftConfig() *raft.Config {

@@ -1,6 +1,7 @@
 package huton
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -57,6 +58,7 @@ type instance struct {
 	raftApplicationRetries  int
 	raftApplicationTimeout  time.Duration
 	raftRetainSnapshotCount int
+	tlsConfig               *tls.Config
 	encryptionKey           []byte
 	rpcListener             net.Listener
 	rpc                     *grpc.Server

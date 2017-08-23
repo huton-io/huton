@@ -1,8 +1,13 @@
 package agent
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
+	"errors"
 	"flag"
+	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"syscall"
@@ -22,6 +27,7 @@ type Command struct {
 func (c *Command) Run(args []string) int {
 	name, opts, peers, err := c.readConfig()
 	if err != nil {
+		c.UI.Error(err.Error())
 		return 1
 	}
 	c.instance, err = huton.NewInstance(name, opts...)
@@ -54,6 +60,9 @@ func (c *Command) readConfig() (string, []huton.Option, []string, error) {
 	var bootstrap bool
 	var bootstrapExpect int
 	var encryptionKey string
+	var certFile string
+	var keyFile string
+	var caFile string
 	peers := []string{}
 	flags := flag.NewFlagSet("agent", flag.ContinueOnError)
 	flags.Usage = func() {
@@ -65,6 +74,9 @@ func (c *Command) readConfig() (string, []huton.Option, []string, error) {
 	flags.BoolVar(&bootstrap, "bootstrap", false, "bootstrap mode")
 	flags.IntVar(&bootstrapExpect, "expect", -1, "bootstrap expect")
 	flags.StringVar(&encryptionKey, "encrypt", "", "base64 encoded encryption key")
+	flags.StringVar(&certFile, "cert", "", "certificate file used for secure raft communications")
+	flags.StringVar(&keyFile, "key", "", "private key associated with cert that is used for secure raft communications")
+	flags.StringVar(&caFile, "caFile", "", "CA file used for cert verification during secure raft communications")
 	flags.Var((*command.AppendSliceValue)(&peers), "peers", "peer list")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		return "", nil, nil, err
@@ -87,6 +99,13 @@ func (c *Command) readConfig() (string, []huton.Option, []string, error) {
 		}
 		opts = append(opts, huton.EncryptionKey(b))
 	}
+	tlsConfig, err := getTLSConfig(certFile, keyFile, caFile)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if tlsConfig != nil {
+		opts = append(opts, huton.TLSConfig(tlsConfig))
+	}
 	return name, opts, peers, nil
 }
 
@@ -99,4 +118,40 @@ func (c *Command) handleSignals() int {
 		c.instance.Shutdown()
 		return 0
 	}
+}
+
+func getTLSConfig(certFile, keyFile, caCertFile string) (*tls.Config, error) {
+	if (certFile != "" && keyFile == "") || (keyFile != "" && certFile == "") {
+		return nil, errors.New("both a cert and key must be provided if one or the other is provided")
+	} else if certFile != "" && keyFile != "" {
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load cert or private key: %s", err)
+		}
+		tlsConfig := &tls.Config{
+			RootCAs:      x509.NewCertPool(),
+			Certificates: []tls.Certificate{cert},
+		}
+		if caCertFile != "" {
+			pool, err := loadCAFile(caCertFile)
+			if err != nil {
+				return tlsConfig, err
+			}
+			tlsConfig.RootCAs = pool
+		}
+		return tlsConfig, nil
+	}
+	return nil, nil
+}
+
+func loadCAFile(cacert string) (*x509.CertPool, error) {
+	pool := x509.NewCertPool()
+	pem, err := ioutil.ReadFile(cacert)
+	if err != nil {
+		return nil, fmt.Errorf("Failed reading CA file: %s", err)
+	}
+	if ok := pool.AppendCertsFromPEM(pem); !ok {
+		return nil, fmt.Errorf("Failed to parse PEM for CA cert: %s", cacert)
+	}
+	return pool, nil
 }

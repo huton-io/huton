@@ -1,6 +1,7 @@
 package huton
 
 import (
+	"crypto/tls"
 	"io"
 	"log"
 	"time"
@@ -86,5 +87,12 @@ func LogOutput(w io.Writer) Option {
 func EncryptionKey(key []byte) Option {
 	return func(ins *instance) {
 		ins.encryptionKey = key
+	}
+}
+
+// TLSConfig sets the TLS configuration for Raft communications.
+func TLSConfig(tlsConfig *tls.Config) Option {
+	return func(ins *instance) {
+		ins.tlsConfig = tlsConfig
 	}
 }
