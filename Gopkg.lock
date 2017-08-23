@@ -77,7 +77,7 @@
   branch = "library-v2-stage-one"
   name = "github.com/hashicorp/raft"
   packages = ["."]
-  revision = "3a6f3bdfe4fc69e300c6d122b1a92051af6f0b95"
+  revision = "29ea0ff7e80ea1c8cd67b33fac7d990af2d07c6c"
 
 [[projects]]
   branch = "master"
@@ -101,7 +101,7 @@
   branch = "master"
   name = "github.com/miekg/dns"
   packages = ["."]
-  revision = "0598bd43cf51d0375c5bcd3a42e807cc19b3b7d9"
+  revision = "e4205768578dc90c2669e75a2f8a8bf77e3083a4"
 
 [[projects]]
   branch = "master"
@@ -131,7 +131,7 @@
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
-  revision = "9f7170bcd8e9f4d3691c06401119c46a769a1e03"
+  revision = "07c182904dbd53199946ba614a412c61d3c548f5"
 
 [[projects]]
   branch = "master"
@@ -143,7 +143,7 @@
   branch = "master"
   name = "google.golang.org/genproto"
   packages = ["googleapis/rpc/status"]
-  revision = "6b7d9516179cd47f4714cfeb0103ad1dede756c4"
+  revision = "ee236bd376b077c7a89f260c026c4735b195e459"
 
 [[projects]]
   name = "google.golang.org/grpc"
@@ -154,6 +154,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "bed9ef34bda62008c8a6158909ac08f651c3ce6a85f14cf835ed6286d5a00a39"
+  inputs-digest = "035e6653f94f614f86a77dcccc7c3421b0b7b3a2f1d86004e71c3ff354b80a63"
   solver-name = "gps-cdcl"
   solver-version = 1
