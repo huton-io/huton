@@ -1,5 +1,5 @@
 # huton
-[![Go Report Card](https://goreportcard.com/badge/github.com/jonbonazza/huton)](https://goreportcard.com/report/github.com/jonbonazza/huton)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jonbonazza/huton)](https://goreportcard.com/report/github.com/jonbonazza/huton) [![Build Status](https://travis-ci.org/jonbonazza/huton.svg?branch=master)](https://travis-ci.org/jonbonazza/huton)
 
 Huton is an embeddable and distributed in-memory key-value store inspired by the likes of [Redis](https://redis.io/) and [memcached](https://memcached.org/) and written in the Go programming language.
 
