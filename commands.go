@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/jonbonazza/huton/command/agent"
+	"github.com/huton-io/huton/command/agent"
 	"github.com/mitchellh/cli"
 )
 

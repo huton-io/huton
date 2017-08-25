@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 	"github.com/hashicorp/serf/serf"
-	"github.com/jonbonazza/huton/lib/proto"
+	"github.com/huton-io/huton/lib/proto"
 	"google.golang.org/grpc"
 )
 

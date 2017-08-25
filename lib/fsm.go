@@ -7,7 +7,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/raft"
-	"github.com/jonbonazza/huton/lib/proto"
+	"github.com/huton-io/huton/lib/proto"
 )
 
 const (

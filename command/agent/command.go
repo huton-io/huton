@@ -12,8 +12,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/jonbonazza/huton/command"
-	"github.com/jonbonazza/huton/lib"
+	"github.com/huton-io/huton/command"
+	"github.com/huton-io/huton/lib"
 	"github.com/mitchellh/cli"
 )
 

@@ -11,7 +11,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
-	"github.com/jonbonazza/huton/lib/proto"
+	"github.com/huton-io/huton/lib/proto"
 )
 
 const (
