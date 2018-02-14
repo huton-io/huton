@@ -2,6 +2,7 @@ package huton
 
 import (
 	"errors"
+	"io"
 	"sync"
 
 	"github.com/golang/protobuf/proto"
@@ -32,6 +33,8 @@ type Snapshot interface {
 
 // Cache is an in-memory key-value store.
 type Cache interface {
+	// Name returns the name of the cache.
+	Name() string
 	// NewBatch creates and returns a new Batch supporting totalOps operations and a buffer size of totalBufSize.
 	// All mutations on a Cache must go through a Batch, even if it's only one.
 	NewBatch(totalOps, totalBufSize int) Batch
@@ -41,6 +44,9 @@ type Cache interface {
 	// Snapshot creates a Snapshot of the cache. All reads from the cache must be performed from a Snapshot(). This ensures that the data
 	// isn't mutated in the middle of a read.
 	Snapshot() Snapshot
+	// Compact performs compaction on the cache. This operation is immediate and blocking. It should not be used unless you really know what you are doing.
+	// Instead, a Compactor should be used to manage compaction in the background.
+	Compact() error
 }
 
 type cache struct {
@@ -48,6 +54,10 @@ type cache struct {
 	instance *instance
 	stack    *segmentStack
 	mu       sync.Mutex
+}
+
+func (c *cache) Name() string {
+	return c.name
 }
 
 func (c *cache) NewBatch(totalOps, totalBufSize int) Batch {
@@ -95,6 +105,27 @@ func (c *cache) Snapshot() Snapshot {
 		s.segments = append(s.segments, c.stack.segments...)
 	}
 	return s
+}
+
+func (c *cache) Compact() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	it := c.stack.iter()
+	seg := newSegment(0, 0)
+	for op, k, v, err := it.current(); err != io.EOF; err = it.next() {
+		if err != nil {
+			return err
+		}
+		if k != nil && v != nil {
+			if err := seg.mutate(op, k, v); err != nil {
+				return err
+			}
+		}
+	}
+	c.stack = &segmentStack{
+		segments: []*segment{seg},
+	}
+	return nil
 }
 
 func (c *cache) pushToStack(seg *segment) {

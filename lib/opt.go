@@ -96,3 +96,10 @@ func TLSConfig(tlsConfig *tls.Config) Option {
 		ins.tlsConfig = tlsConfig
 	}
 }
+
+// CompactionInterval is the minimum interval for which cache compaction will occur.
+func CompactionInterval(interval time.Duration) Option {
+	return func(ins *instance) {
+		ins.compactor = PeriodicCompactor(interval)
+	}
+}

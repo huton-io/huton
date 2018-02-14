@@ -72,6 +72,8 @@ type instance struct {
 	raftNotifyCh            chan bool
 	shutdownLock            sync.Mutex
 	shutdown                bool
+	errCh                   chan error
+	compactor               Compactor
 }
 
 func (i *instance) Cache(name string) Cache {
@@ -82,6 +84,7 @@ func (i *instance) Cache(name string) Cache {
 	}
 	dc := newCache(name, i)
 	i.caches[name] = dc
+	go i.compactor(dc, i.errCh, i.shutdownCh)
 	return dc
 }
 
@@ -193,7 +196,7 @@ func NewInstance(name string, opts ...Option) (Instance, error) {
 		name:                    name,
 		bindAddr:                "127.0.0.1",
 		bindPort:                8100,
-		shutdownCh:              make(chan struct{}),
+		shutdownCh:              make(chan struct{}, 1),
 		peers:                   make(map[string]*Peer),
 		caches:                  make(map[string]*cache),
 		logger:                  log.New(os.Stdout, "huton", log.LstdFlags),
@@ -201,6 +204,8 @@ func NewInstance(name string, opts ...Option) (Instance, error) {
 		raftTransportTimeout:    10 * time.Second,
 		raftRetainSnapshotCount: 2,
 		serfEventChannel:        make(chan serf.Event, 256),
+		errCh:                   make(chan error, 256),
+		compactor:               PeriodicCompactor(defaultCompactionInterval),
 	}
 	for _, opt := range opts {
 		opt(i)
@@ -241,6 +246,8 @@ func (i *instance) handleEvents() {
 			i.handleSerfEvent(e)
 		case <-i.serf.ShutdownCh():
 			i.Shutdown()
+		case err := <-i.errCh:
+			i.logger.Printf("[ERR] %s", err)
 		case <-i.shutdownCh:
 			return
 		}
