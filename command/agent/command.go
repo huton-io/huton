@@ -114,8 +114,6 @@ func (c *Command) handleSignals() int {
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-signalCh:
-		c.instance.Leave()
-		c.instance.Shutdown()
 		return 0
 	}
 }
