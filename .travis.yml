@@ -3,9 +3,9 @@ language: go
 sudo: false
 
 go:
-  - 1.9
+  - 1.10
 
 script:
   - go build
-  - go test -v $(go list ./... | grep -v /vendor/)
-  - go vet $(go list ./... | grep -v /vendor/) 
+  - go test -v ./...
+  - go vet ./...
