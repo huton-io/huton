@@ -41,6 +41,7 @@ type Instance interface {
 	Leave() error
 	// Shutdown forcefully shuts down the instance.
 	Shutdown() error
+	WaitForReady()
 }
 
 type instance struct {
@@ -70,6 +71,7 @@ type instance struct {
 	caches                  map[string]*cache
 	logger                  *log.Logger
 	raftNotifyCh            chan bool
+	readyCh                 chan struct{}
 	shutdownLock            sync.Mutex
 	shutdown                bool
 	errCh                   chan error
@@ -175,6 +177,10 @@ func (i *instance) Leave() error {
 	return nil
 }
 
+func (i *instance) WaitForReady() {
+	<-i.readyCh
+}
+
 func (i *instance) numPeers() (int, error) {
 	future := i.raft.GetConfiguration()
 	if err := future.Error(); err != nil {
@@ -205,6 +211,7 @@ func NewInstance(name string, opts ...Option) (Instance, error) {
 		raftRetainSnapshotCount: 2,
 		serfEventChannel:        make(chan serf.Event, 256),
 		errCh:                   make(chan error, 256),
+		readyCh:                 make(chan struct{}, 1),
 		compactor:               PeriodicCompactor(defaultCompactionInterval),
 	}
 	for _, opt := range opts {
@@ -244,6 +251,8 @@ func (i *instance) handleEvents() {
 		select {
 		case e := <-i.serfEventChannel:
 			i.handleSerfEvent(e)
+		case <-i.raft.LeaderCh():
+			close(i.readyCh)
 		case <-i.serf.ShutdownCh():
 			i.Shutdown()
 		case err := <-i.errCh:
