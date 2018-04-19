@@ -111,20 +111,20 @@ func (c *cache) Compact() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.stack == nil {
-		c.instance.logger.Printf("[INFO]: Nothing to compact for cache %s. Skipping compaction for this cache.", c.name)
+		c.instance.logger.Printf("[INFO] Nothing to compact for cache %s. Skipping compaction for this cache.", c.name)
 		return nil
 	}
-	c.instance.logger.Println("[INFO]: Starting compaction")
+	c.instance.logger.Println("[INFO] Starting compaction")
 	it := c.stack.iter()
 	seg := newSegment(0, 0)
 	for op, k, v, err := it.current(); err != io.EOF; err = it.next() {
 		if err != nil {
-			c.instance.logger.Println("[ERR]: Failed during compaction iteration.")
+			c.instance.logger.Println("[ERR] Failed during compaction iteration.")
 			return err
 		}
 		if k != nil && v != nil {
 			if err := seg.mutate(op, k, v); err != nil {
-				c.instance.logger.Println("[ERR]: Failed mutation during compaction.")
+				c.instance.logger.Println("[ERR] Failed mutation during compaction.")
 				return err
 			}
 		}
@@ -132,7 +132,7 @@ func (c *cache) Compact() error {
 	c.stack = &segmentStack{
 		segments: []*segment{seg},
 	}
-	c.instance.logger.Println("[INFO]: Compaction completed successfully.")
+	c.instance.logger.Println("[INFO] Compaction completed successfully.")
 	return nil
 }
 
