@@ -20,7 +20,8 @@ var (
 	errSnapshotsNotSupported = errors.New("snapshots not supported")
 )
 
-func (i *instance) Apply(l *raft.Log) interface{} {
+// Apply applies a raft log received from the leader.
+func (i *Instance) Apply(l *raft.Log) interface{} {
 	var cmd huton_proto.Command
 	if err := proto.Unmarshal(l.Data, &cmd); err != nil {
 		return err
@@ -29,7 +30,7 @@ func (i *instance) Apply(l *raft.Log) interface{} {
 	return nil
 }
 
-func (i *instance) applyCommand(cmd *huton_proto.Command) {
+func (i *Instance) applyCommand(cmd *huton_proto.Command) {
 	for j := 0; j <= i.raftApplicationRetries; j++ {
 		switch *cmd.Type {
 		case typeCacheExecute:
@@ -44,14 +45,14 @@ func (i *instance) applyCommand(cmd *huton_proto.Command) {
 	}
 }
 
-func (i *instance) applyCacheBatch(cmd *huton_proto.CacheBatch) {
+func (i *Instance) applyCacheBatch(cmd *huton_proto.CacheBatch) {
 	for j := 0; j <= i.raftApplicationRetries; j++ {
 		c := i.Cache(*cmd.CacheName)
 		seg := &segment{
 			buf:  cmd.Buf,
 			meta: cmd.Meta,
 		}
-		err := c.(*cache).executeSegment(seg)
+		err := c.executeSegment(seg)
 		if err == nil {
 			return
 		}
@@ -62,7 +63,7 @@ func (i *instance) applyCacheBatch(cmd *huton_proto.CacheBatch) {
 	}
 }
 
-func (i *instance) applyLeaveCluster(name string) {
+func (i *Instance) applyLeaveCluster(name string) {
 	if i.IsLeader() {
 		if err := i.raft.RemoveServer(raft.ServerID(name), 0, 0).Error(); err != nil {
 			i.logger.Printf("[WARN] failed to remove peer: %v", err)
@@ -70,10 +71,12 @@ func (i *instance) applyLeaveCluster(name string) {
 	}
 }
 
-func (i *instance) Snapshot() (raft.FSMSnapshot, error) {
+// Snapshot returns a snapshot of the current instance state.
+// If a snapshot cannot be created, an error is returned as well.
+func (i *Instance) Snapshot() (raft.FSMSnapshot, error) {
 	i.dbMu.Lock()
 	defer i.dbMu.Unlock()
-	caches := make([]*cache, 0, len(i.caches))
+	caches := make([]*Cache, 0, len(i.caches))
 	for _, c := range i.caches {
 		caches = append(caches, c)
 	}
@@ -82,14 +85,16 @@ func (i *instance) Snapshot() (raft.FSMSnapshot, error) {
 	}, nil
 }
 
-func (i *instance) Restore(rc io.ReadCloser) error {
+// Restore restores the instance's state from an snapshot. If the state
+// cannot be restored, an error is returned.
+func (i *Instance) Restore(rc io.ReadCloser) error {
 	i.dbMu.Lock()
 	defer i.dbMu.Unlock()
 	var numCaches int64
 	if err := binary.Read(rc, Endianess, &numCaches); err != nil {
 		return err
 	}
-	caches := make(map[string]*cache)
+	caches := make(map[string]*Cache)
 	for j := int64(0); j < numCaches; j++ {
 		c, err := loadCache(rc, i)
 		if err != nil {
@@ -102,7 +107,7 @@ func (i *instance) Restore(rc io.ReadCloser) error {
 }
 
 type fsmSnapshot struct {
-	caches []*cache
+	caches []*Cache
 }
 
 func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {

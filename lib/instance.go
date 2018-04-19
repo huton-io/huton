@@ -27,24 +27,7 @@ var (
 )
 
 // Instance is an interface for the Huton instance.
-type Instance interface {
-	Cache(name string) Cache
-	// Peers returns the current list of cluster peers. The list includes the local peer.
-	Peers() []*Peer
-	// Local returns the local peer.
-	Local() *Peer
-	// IsLeader returns true if this instance is the cluster leader.
-	IsLeader() bool
-	// Join joins and existing cluster.
-	Join(addrs []string) (int, error)
-	// Leave gracefully leaves the cluster.
-	Leave() error
-	// Shutdown forcefully shuts down the instance.
-	Shutdown() error
-	WaitForReady()
-}
-
-type instance struct {
+type Instance struct {
 	name                    string
 	bindAddr                string
 	bindPort                int
@@ -68,7 +51,7 @@ type instance struct {
 	peersMu                 sync.Mutex
 	peers                   map[string]*Peer
 	dbMu                    sync.Mutex
-	caches                  map[string]*cache
+	caches                  map[string]*Cache
 	logger                  *log.Logger
 	raftNotifyCh            chan bool
 	readyCh                 chan struct{}
@@ -78,7 +61,9 @@ type instance struct {
 	compactor               Compactor
 }
 
-func (i *instance) Cache(name string) Cache {
+// Cache returns the cache with the given name. If no cache exists with the
+// provided name, a new, empty cache with that name will be created.
+func (i *Instance) Cache(name string) *Cache {
 	i.dbMu.Lock()
 	defer i.dbMu.Unlock()
 	if c, ok := i.caches[name]; ok {
@@ -90,47 +75,21 @@ func (i *instance) Cache(name string) Cache {
 	return dc
 }
 
-func (i *instance) Join(addrs []string) (int, error) {
-	return i.serf.Join(addrs, true)
-}
-
-func (i *instance) IsLeader() bool {
+// IsLeader returns true if this instance is the cluster leader.
+func (i *Instance) IsLeader() bool {
 	if i.raft == nil {
 		return false
 	}
 	return i.raft.State() == raft.Leader
 }
 
-func (i *instance) Shutdown() error {
-	i.logger.Println("[INFO] Shutting down instance...")
-	i.shutdownLock.Lock()
-	defer i.shutdownLock.Unlock()
-	if i.shutdown {
-		return nil
-	}
-	i.shutdown = true
-	close(i.shutdownCh)
-	if i.serf != nil {
-		i.serf.Shutdown()
-	}
-	if i.raft != nil {
-		i.raftTransport.Close()
-		if err := i.raft.Shutdown().Error(); err != nil {
-			i.logger.Printf("[ERR] failed to shudown raft server: %v", err)
-		}
-		if i.raftBoltStore != nil {
-			i.raftBoltStore.Close()
-		}
-	}
-	if i.rpcListener != nil {
-		if err := i.rpcListener.Close(); err != nil {
-			return fmt.Errorf("Failed to close RPC Listener: %s", err)
-		}
-	}
-	return nil
+// Join joins and existing cluster.
+func (i *Instance) Join(addrs []string) (int, error) {
+	return i.serf.Join(addrs, true)
 }
 
-func (i *instance) Leave() error {
+// Leave gracefully leaves the cluster.
+func (i *Instance) Leave() error {
 	numPeers, err := i.numPeers()
 	if err != nil {
 		return err
@@ -177,11 +136,42 @@ func (i *instance) Leave() error {
 	return nil
 }
 
-func (i *instance) WaitForReady() {
+// Shutdown forcefully shuts down the instance.
+func (i *Instance) Shutdown() error {
+	i.logger.Println("[INFO] Shutting down instance...")
+	i.shutdownLock.Lock()
+	defer i.shutdownLock.Unlock()
+	if i.shutdown {
+		return nil
+	}
+	i.shutdown = true
+	close(i.shutdownCh)
+	if i.serf != nil {
+		i.serf.Shutdown()
+	}
+	if i.raft != nil {
+		i.raftTransport.Close()
+		if err := i.raft.Shutdown().Error(); err != nil {
+			i.logger.Printf("[ERR] failed to shudown raft server: %v", err)
+		}
+		if i.raftBoltStore != nil {
+			i.raftBoltStore.Close()
+		}
+	}
+	if i.rpcListener != nil {
+		if err := i.rpcListener.Close(); err != nil {
+			return fmt.Errorf("Failed to close RPC Listener: %s", err)
+		}
+	}
+	return nil
+}
+
+// WaitForReady blocks until the cluster becomes ready and leadership is established.
+func (i *Instance) WaitForReady() {
 	<-i.readyCh
 }
 
-func (i *instance) numPeers() (int, error) {
+func (i *Instance) numPeers() (int, error) {
 	future := i.raft.GetConfiguration()
 	if err := future.Error(); err != nil {
 		return 0, err
@@ -194,17 +184,17 @@ func (i *instance) numPeers() (int, error) {
 // GRPC server, with the provided configuration.
 //
 // If this function returns successfully, the instance should be considered started and ready for use.
-func NewInstance(name string, opts ...Option) (Instance, error) {
+func NewInstance(name string, opts ...Option) (*Instance, error) {
 	if name == "" {
 		return nil, ErrNoName
 	}
-	i := &instance{
+	i := &Instance{
 		name:                    name,
 		bindAddr:                "127.0.0.1",
 		bindPort:                8100,
 		shutdownCh:              make(chan struct{}, 1),
 		peers:                   make(map[string]*Peer),
-		caches:                  make(map[string]*cache),
+		caches:                  make(map[string]*Cache),
 		logger:                  log.New(os.Stdout, "huton", log.LstdFlags),
 		raftApplicationTimeout:  10 * time.Second,
 		raftTransportTimeout:    10 * time.Second,
@@ -246,7 +236,7 @@ func NewInstance(name string, opts ...Option) (Instance, error) {
 	return i, nil
 }
 
-func (i *instance) handleEvents() {
+func (i *Instance) handleEvents() {
 	for {
 		select {
 		case e := <-i.serfEventChannel:
@@ -263,7 +253,7 @@ func (i *instance) handleEvents() {
 	}
 }
 
-func (i *instance) issueLeaveIntent() {
+func (i *Instance) issueLeaveIntent() {
 	t := typeLeaveCluster
 	cmd := &huton_proto.Command{
 		Type: &t,

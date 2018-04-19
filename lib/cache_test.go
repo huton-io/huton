@@ -66,7 +66,7 @@ func TestCacheDel(t *testing.T) {
 }
 
 func TestCacheCompact(t *testing.T) {
-	instance := &instance{logger: log.New(ioutil.Discard, "", 0)}
+	instance := &Instance{logger: log.New(ioutil.Discard, "", 0)}
 	c := newCache("test", instance)
 	b := c.NewBatch(2, 1000).(*segment)
 	err := b.Set([]byte("test"), []byte("testVal"))

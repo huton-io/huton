@@ -32,39 +32,27 @@ type Snapshot interface {
 }
 
 // Cache is an in-memory key-value store.
-type Cache interface {
-	// Name returns the name of the cache.
-	Name() string
-	// NewBatch creates and returns a new Batch supporting totalOps operations and a buffer size of totalBufSize.
-	// All mutations on a Cache must go through a Batch, even if it's only one.
-	NewBatch(totalOps, totalBufSize int) Batch
-	// ExecuteBatch executes all operations in a Batch in sequence. Execution is replicated on all nodes of the cluster asynchronously.
-	// An error is returned if the issuance of replication for the batch could not be completed.
-	ExecuteBatch(batch Batch) error
-	// Snapshot creates a Snapshot of the cache. All reads from the cache must be performed from a Snapshot(). This ensures that the data
-	// isn't mutated in the middle of a read.
-	Snapshot() Snapshot
-	// Compact performs compaction on the cache. This operation is immediate and blocking. It should not be used unless you really know what you are doing.
-	// Instead, a Compactor should be used to manage compaction in the background.
-	Compact() error
-}
-
-type cache struct {
+type Cache struct {
 	name     string
-	instance *instance
+	instance *Instance
 	stack    *segmentStack
 	mu       sync.Mutex
 }
 
-func (c *cache) Name() string {
+// Name returns the name of the cache.
+func (c *Cache) Name() string {
 	return c.name
 }
 
-func (c *cache) NewBatch(totalOps, totalBufSize int) Batch {
+// NewBatch creates and returns a new Batch supporting totalOps operations and a buffer size of totalBufSize.
+// All mutations on a Cache must go through a Batch, even if it's only one.
+func (c *Cache) NewBatch(totalOps, totalBufSize int) Batch {
 	return newSegment(totalOps, totalBufSize)
 }
 
-func (c *cache) ExecuteBatch(batch Batch) error {
+// ExecuteBatch executes all operations in a Batch in sequence. Execution is replicated on all nodes of the cluster asynchronously.
+// An error is returned if the issuance of replication for the batch could not be completed.
+func (c *Cache) ExecuteBatch(batch Batch) error {
 	seg, ok := batch.(*segment)
 	if !ok {
 		return ErrWrongBatchType
@@ -85,18 +73,9 @@ func (c *cache) ExecuteBatch(batch Batch) error {
 	return c.instance.apply(cmd)
 }
 
-func (c *cache) executeSegment(seg *segment) error {
-	if seg.isEmpty() {
-		return nil
-	}
-	seg.readyDeferredSort()
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.pushToStack(seg)
-	return nil
-}
-
-func (c *cache) Snapshot() Snapshot {
+// Snapshot creates a Snapshot of the cache. All reads from the cache must be performed from a Snapshot(). This ensures that the data
+// isn't mutated in the middle of a read.
+func (c *Cache) Snapshot() Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	s := &segmentStack{}
@@ -107,7 +86,9 @@ func (c *cache) Snapshot() Snapshot {
 	return s
 }
 
-func (c *cache) Compact() error {
+// Compact performs compaction on the cache. This operation is immediate and blocking. It should not be used unless you really know what you are doing.
+// Instead, a Compactor should be used to manage compaction in the background.
+func (c *Cache) Compact() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.stack == nil {
@@ -136,7 +117,18 @@ func (c *cache) Compact() error {
 	return nil
 }
 
-func (c *cache) pushToStack(seg *segment) {
+func (c *Cache) executeSegment(seg *segment) error {
+	if seg.isEmpty() {
+		return nil
+	}
+	seg.readyDeferredSort()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pushToStack(seg)
+	return nil
+}
+
+func (c *Cache) pushToStack(seg *segment) {
 	if c.stack == nil {
 		c.stack = &segmentStack{
 			segments: make([]*segment, 0, 1),
@@ -145,8 +137,8 @@ func (c *cache) pushToStack(seg *segment) {
 	c.stack.segments = append(c.stack.segments, seg)
 }
 
-func newCache(name string, inst *instance) *cache {
-	c := &cache{
+func newCache(name string, inst *Instance) *Cache {
+	c := &Cache{
 		name:     name,
 		instance: inst,
 	}

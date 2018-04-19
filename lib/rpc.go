@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-func (i *instance) setupRPC() (err error) {
+func (i *Instance) setupRPC() (err error) {
 	addr := net.JoinHostPort(i.bindAddr, strconv.Itoa(i.bindPort+2))
 	i.rpcListener, err = net.Listen("tcp", addr)
 	if err != nil {
@@ -23,12 +23,13 @@ func (i *instance) setupRPC() (err error) {
 	return
 }
 
-func (i *instance) OnCommand(ctx context.Context, cmd *huton_proto.Command) (*huton_proto.Response, error) {
+// OnCommand is a callback triggered by the RPC server when a new huton Command is received.
+func (i *Instance) OnCommand(ctx context.Context, cmd *huton_proto.Command) (*huton_proto.Response, error) {
 	err := i.apply(cmd)
 	return &huton_proto.Response{}, err
 }
 
-func (i *instance) sendCommand(peer *Peer, cmd *huton_proto.Command) error {
+func (i *Instance) sendCommand(peer *Peer, cmd *huton_proto.Command) error {
 	conn, err := grpc.Dial(peer.RPCAddr.String(), grpc.WithInsecure())
 	if err != nil {
 		return err

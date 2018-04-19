@@ -38,13 +38,13 @@ func newMockSnapshotSink(b []byte) *mockSnapshotSink {
 
 func TestFSMSnapshot(t *testing.T) {
 	sink := newMockSnapshotSink([]byte{})
-	i := &instance{
-		caches:    make(map[string]*cache),
-		compactor: func(Cache, chan<- error, <-chan struct{}) {},
+	i := &Instance{
+		caches:    make(map[string]*Cache),
+		compactor: func(*Cache, chan<- error, <-chan struct{}) {},
 	}
-	i2 := &instance{
-		caches:    make(map[string]*cache),
-		compactor: func(Cache, chan<- error, <-chan struct{}) {},
+	i2 := &Instance{
+		caches:    make(map[string]*Cache),
+		compactor: func(*Cache, chan<- error, <-chan struct{}) {},
 	}
 	primeCache("1", i, t)
 	primeCache("2", i, t)
@@ -63,8 +63,8 @@ func TestFSMSnapshot(t *testing.T) {
 	compareInstances(i, i2, t)
 }
 
-func primeCache(name string, i Instance, t *testing.T) {
-	c := i.Cache(name).(*cache)
+func primeCache(name string, i *Instance, t *testing.T) {
+	c := i.Cache(name)
 	batch := c.NewBatch(2, 1000).(*segment)
 	batch.Set([]byte("test1"), []byte("test1Val"))
 	batch.Set([]byte("test12"), []byte("test2Val"))
@@ -74,7 +74,7 @@ func primeCache(name string, i Instance, t *testing.T) {
 	}
 }
 
-func compareInstances(i, i2 *instance, t *testing.T) {
+func compareInstances(i, i2 *Instance, t *testing.T) {
 	for name, c := range i.caches {
 		fmt.Println(name)
 		c2, ok := i2.caches[name]
@@ -85,7 +85,7 @@ func compareInstances(i, i2 *instance, t *testing.T) {
 	}
 }
 
-func compareCaches(c, c2 *cache, t *testing.T) {
+func compareCaches(c, c2 *Cache, t *testing.T) {
 	if c.name != c2.name {
 		t.Fatalf("Cache name mismatch: %s and %s", c.name, c2.name)
 	}

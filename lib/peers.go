@@ -23,6 +23,29 @@ func (p *Peer) String() string {
 	return string(b)
 }
 
+// Peers returns the current list of cluster peers. The list includes the local peer.
+func (i *Instance) Peers() []*Peer {
+	i.peersMu.Lock()
+	defer i.peersMu.Unlock()
+	var peers []*Peer
+	for _, peer := range i.peers {
+		peers = append(peers, peer)
+	}
+	return peers
+}
+
+// Local returns the local peer.
+func (i *Instance) Local() *Peer {
+	i.peersMu.Lock()
+	defer i.peersMu.Unlock()
+	for _, p := range i.peers {
+		if p.Name == i.name {
+			return p
+		}
+	}
+	return nil
+}
+
 func newPeer(member serf.Member) (*Peer, error) {
 	raftPort, err := strconv.Atoi(member.Tags["raftPort"])
 	if err != nil {
@@ -53,25 +76,4 @@ func newPeer(member serf.Member) (*Peer, error) {
 		Expect:    expect,
 		Bootstrap: member.Tags["boostrap"] == "1",
 	}, nil
-}
-
-func (i *instance) Peers() []*Peer {
-	i.peersMu.Lock()
-	defer i.peersMu.Unlock()
-	var peers []*Peer
-	for _, peer := range i.peers {
-		peers = append(peers, peer)
-	}
-	return peers
-}
-
-func (i *instance) Local() *Peer {
-	i.peersMu.Lock()
-	defer i.peersMu.Unlock()
-	for _, p := range i.peers {
-		if p.Name == i.name {
-			return p
-		}
-	}
-	return nil
 }
