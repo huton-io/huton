@@ -68,7 +68,7 @@ func (i *Instance) maybePerformInitialBootstrap(raftConfig *raft.Config, cacheSt
 		if !hasState {
 			configuration := raft.Configuration{
 				Servers: []raft.Server{
-					raft.Server{
+					{
 						ID:      raftConfig.LocalID,
 						Address: i.raftTransport.LocalAddr(),
 					},
