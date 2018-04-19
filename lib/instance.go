@@ -102,7 +102,7 @@ func (i *instance) IsLeader() bool {
 }
 
 func (i *instance) Shutdown() error {
-	i.logger.Println("Shutting down instance...")
+	i.logger.Println("[INFO] Shutting down instance...")
 	i.shutdownLock.Lock()
 	defer i.shutdownLock.Unlock()
 	if i.shutdown {
@@ -217,12 +217,12 @@ func NewInstance(name string, opts ...Option) (Instance, error) {
 	for _, opt := range opts {
 		opt(i)
 	}
-	i.logger.Println("Initializing RPC server...")
+	i.logger.Println("[INFO] Initializing RPC server...")
 	if err := i.setupRPC(); err != nil {
 		i.Shutdown()
 		return i, err
 	}
-	i.logger.Println("Initializing Raft cluster...")
+	i.logger.Println("[INFO] Initializing Raft cluster...")
 	if err := i.setupRaft(); err != nil {
 		i.Shutdown()
 		return i, err
@@ -237,7 +237,7 @@ func NewInstance(name string, opts ...Option) (Instance, error) {
 		Port: i.bindPort + 2,
 	}
 
-	i.logger.Println("Initializing Serf cluster...")
+	i.logger.Println("[INFO] Initializing Serf cluster...")
 	if err := i.setupSerf(raftAddr, rpcAddr); err != nil {
 		i.Shutdown()
 		return i, err

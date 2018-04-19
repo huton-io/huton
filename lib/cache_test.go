@@ -1,6 +1,8 @@
 package huton
 
 import (
+	"io/ioutil"
+	"log"
 	"testing"
 )
 
@@ -64,7 +66,8 @@ func TestCacheDel(t *testing.T) {
 }
 
 func TestCacheCompact(t *testing.T) {
-	c := newCache("test", nil)
+	instance := &instance{logger: log.New(ioutil.Discard, "", 0)}
+	c := newCache("test", instance)
 	b := c.NewBatch(2, 1000).(*segment)
 	err := b.Set([]byte("test"), []byte("testVal"))
 	if err != nil {
