@@ -11,8 +11,9 @@ Huton is considered **prototype** status, and is not yet ready for production us
 Huton currently expects a quorum of nodes before the cluster is considered stable. This means that you need _at least_ 3 nodes to complete a cluster.
 To begin, start two huton agents:
 ```bash
-$ huton agent -name agent1 -bindPort 8100 -expect 3
-$ huton agent -name agent2 -bindPort 8200 -peers 127.0.0.1:8100 -expect 3
+$ huton agent -name agent1 -bindPort 8100 -peers 127.0.0.1:8100,127.0.0.1:8200,127.0.0.1:8300 -expect 3
+$ huton agent -name agent2 -bindPort 8200 -peers 127.0.0.1:8100,127.0.0.1:8200,127.0.0.1:8300 -expect 3
+$ huton agent -name agent3 -bindPort 8300 -peers 127.0.0.1:8100,127.0.0.1:8200,127.0.0.1:8300 -expect 3
 ```
 Huton requires that the name of each node in a cluster be unique. If one or more nodes have the same name, this can cause havoc with the internal peer list.
 
