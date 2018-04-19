@@ -33,7 +33,7 @@ type cmd struct {
 	help     string
 	conf     *config
 	flagSet  *flag.FlagSet
-	instance huton.Instance
+	instance *huton.Instance
 }
 
 func (c *cmd) Run(args []string) int {

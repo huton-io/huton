@@ -18,7 +18,7 @@ const (
 	raftLogCacheSize = 512
 )
 
-func (i *instance) setupRaft() error {
+func (i *Instance) setupRaft() error {
 	addr := &net.TCPAddr{
 		IP:   net.ParseIP(i.bindAddr),
 		Port: i.bindPort + 1,
@@ -59,7 +59,7 @@ func (i *instance) setupRaft() error {
 	return err
 }
 
-func (i *instance) maybePerformInitialBootstrap(raftConfig *raft.Config, cacheStore *raft.LogCache, snapshotStore raft.SnapshotStore) error {
+func (i *Instance) maybePerformInitialBootstrap(raftConfig *raft.Config, cacheStore *raft.LogCache, snapshotStore raft.SnapshotStore) error {
 	if i.bootstrap {
 		hasState, err := raft.HasExistingState(cacheStore, i.raftBoltStore, snapshotStore)
 		if err != nil {
@@ -82,7 +82,7 @@ func (i *instance) maybePerformInitialBootstrap(raftConfig *raft.Config, cacheSt
 	return nil
 }
 
-func (i *instance) maybeRecoverRaft(
+func (i *Instance) maybeRecoverRaft(
 	raftConfig *raft.Config,
 	cacheStore *raft.LogCache,
 	snapshotStore raft.SnapshotStore,
@@ -102,21 +102,21 @@ func (i *instance) maybeRecoverRaft(
 	return nil
 }
 
-func (i *instance) getRaftTransport(addr net.Addr) (*raft.NetworkTransport, error) {
+func (i *Instance) getRaftTransport(addr net.Addr) (*raft.NetworkTransport, error) {
 	if i.tlsConfig != nil {
 		return newTLSTransport(addr.String(), addr, 3, i.raftTransportTimeout, i.tlsConfig, ioutil.Discard)
 	}
 	return raft.NewTCPTransport(addr.String(), addr, 3, i.raftTransportTimeout, ioutil.Discard)
 }
 
-func (i *instance) getRaftConfig() *raft.Config {
+func (i *Instance) getRaftConfig() *raft.Config {
 	raftConfig := raft.DefaultConfig()
 	raftConfig.LocalID = raft.ServerID(i.name)
 	raftConfig.ShutdownOnRemove = false
 	return raftConfig
 }
 
-func (i *instance) apply(cmd *huton_proto.Command) error {
+func (i *Instance) apply(cmd *huton_proto.Command) error {
 	if i.raft == nil {
 		return nil
 	}

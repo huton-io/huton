@@ -59,7 +59,7 @@ func (s *segmentStack) persist(w io.Writer) error {
 	return nil
 }
 
-func (c *cache) persist(w io.Writer) error {
+func (c *Cache) persist(w io.Writer) error {
 	name := []byte(c.name)
 	if err := binary.Write(w, Endianess, int64(len(name))); err != nil {
 		return err
@@ -122,7 +122,7 @@ func loadSegmentStack(r io.Reader) (*segmentStack, error) {
 	}, nil
 }
 
-func loadCache(r io.Reader, ins *instance) (*cache, error) {
+func loadCache(r io.Reader, ins *Instance) (*Cache, error) {
 	var nameWidth int64
 	if err := binary.Read(r, Endianess, &nameWidth); err != nil {
 		return nil, err
@@ -139,7 +139,7 @@ func loadCache(r io.Reader, ins *instance) (*cache, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &cache{
+	return &Cache{
 		name:     string(nameBuf),
 		stack:    stack,
 		instance: ins,

@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
-func (i *instance) setupSerf(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (err error) {
+func (i *Instance) setupSerf(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (err error) {
 	serfConfig, err := i.getSerfConfig(raftAddr, rpcAddr)
 	if err != nil {
 		return err
@@ -20,7 +20,7 @@ func (i *instance) setupSerf(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (err e
 	return err
 }
 
-func (i *instance) getSerfConfig(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (*serf.Config, error) {
+func (i *Instance) getSerfConfig(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (*serf.Config, error) {
 	serfConfig := serf.DefaultConfig()
 	serfConfig.EnableNameConflictResolution = false
 	serfConfig.MemberlistConfig.BindAddr = i.bindAddr
@@ -45,7 +45,7 @@ func (i *instance) getSerfConfig(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (*
 	return serfConfig, nil
 }
 
-func (i *instance) handleSerfEvent(event serf.Event) {
+func (i *Instance) handleSerfEvent(event serf.Event) {
 	switch event.EventType() {
 	case serf.EventMemberJoin:
 		i.peerJoined(event.(serf.MemberEvent))
@@ -56,7 +56,7 @@ func (i *instance) handleSerfEvent(event serf.Event) {
 	}
 }
 
-func (i *instance) peerJoined(event serf.MemberEvent) {
+func (i *Instance) peerJoined(event serf.MemberEvent) {
 	i.logger.Println("[INFO] member join")
 	for _, member := range event.Members {
 		peer, err := newPeer(member)
@@ -80,7 +80,7 @@ func (i *instance) peerJoined(event serf.MemberEvent) {
 	}
 }
 
-func (i *instance) peerGone(event serf.MemberEvent) {
+func (i *Instance) peerGone(event serf.MemberEvent) {
 	for _, member := range event.Members {
 		peer, err := newPeer(member)
 		if err == nil {
@@ -91,7 +91,7 @@ func (i *instance) peerGone(event serf.MemberEvent) {
 	}
 }
 
-func (i *instance) maybeBootstrap() {
+func (i *Instance) maybeBootstrap() {
 	index, err := i.raftBoltStore.LastIndex()
 	if err != nil {
 		i.logger.Printf("[ERR] failed to read last raft index: %v", err)
