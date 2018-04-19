@@ -31,7 +31,7 @@ func New(ui cli.Ui) cli.Command {
 type cmd struct {
 	UI       cli.Ui
 	help     string
-	conf     config
+	conf     *config
 	flagSet  *flag.FlagSet
 	instance huton.Instance
 }

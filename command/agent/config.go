@@ -55,7 +55,7 @@ func (c config) options() ([]huton.Option, error) {
 	return opts, nil
 }
 
-func addFlags(fs *flag.FlagSet) config {
+func addFlags(fs *flag.FlagSet) *config {
 	var c config
 	fs.StringVar(&c.name, "name", "", "unique instance name")
 	fs.StringVar(&c.bindAddr, "bindAddr", "", "address to bind serf to")
@@ -67,7 +67,7 @@ func addFlags(fs *flag.FlagSet) config {
 	fs.StringVar(&c.keyFile, "key", "", "private key associated with cert that is used for secure raft communications")
 	fs.StringVar(&c.caFile, "caFile", "", "CA file used for cert verification during secure raft communications")
 	fs.Var((*flags.StringSlice)(&c.peers), "peers", "peer list")
-	return c
+	return &c
 }
 
 func getTLSConfig(certFile, keyFile, caCertFile string) (*tls.Config, error) {
