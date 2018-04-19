@@ -41,6 +41,7 @@ type Instance interface {
 	Leave() error
 	// Shutdown forcefully shuts down the instance.
 	Shutdown() error
+	WaitForReady()
 }
 
 type instance struct {
@@ -70,8 +71,11 @@ type instance struct {
 	caches                  map[string]*cache
 	logger                  *log.Logger
 	raftNotifyCh            chan bool
+	readyCh                 chan struct{}
 	shutdownLock            sync.Mutex
 	shutdown                bool
+	errCh                   chan error
+	compactor               Compactor
 }
 
 func (i *instance) Cache(name string) Cache {
@@ -82,6 +86,7 @@ func (i *instance) Cache(name string) Cache {
 	}
 	dc := newCache(name, i)
 	i.caches[name] = dc
+	go i.compactor(dc, i.errCh, i.shutdownCh)
 	return dc
 }
 
@@ -97,7 +102,7 @@ func (i *instance) IsLeader() bool {
 }
 
 func (i *instance) Shutdown() error {
-	i.logger.Println("Shutting down instance...")
+	i.logger.Println("[INFO] Shutting down instance...")
 	i.shutdownLock.Lock()
 	defer i.shutdownLock.Unlock()
 	if i.shutdown {
@@ -172,6 +177,10 @@ func (i *instance) Leave() error {
 	return nil
 }
 
+func (i *instance) WaitForReady() {
+	<-i.readyCh
+}
+
 func (i *instance) numPeers() (int, error) {
 	future := i.raft.GetConfiguration()
 	if err := future.Error(); err != nil {
@@ -193,7 +202,7 @@ func NewInstance(name string, opts ...Option) (Instance, error) {
 		name:                    name,
 		bindAddr:                "127.0.0.1",
 		bindPort:                8100,
-		shutdownCh:              make(chan struct{}),
+		shutdownCh:              make(chan struct{}, 1),
 		peers:                   make(map[string]*Peer),
 		caches:                  make(map[string]*cache),
 		logger:                  log.New(os.Stdout, "huton", log.LstdFlags),
@@ -201,16 +210,19 @@ func NewInstance(name string, opts ...Option) (Instance, error) {
 		raftTransportTimeout:    10 * time.Second,
 		raftRetainSnapshotCount: 2,
 		serfEventChannel:        make(chan serf.Event, 256),
+		errCh:                   make(chan error, 256),
+		readyCh:                 make(chan struct{}, 1),
+		compactor:               PeriodicCompactor(defaultCompactionInterval),
 	}
 	for _, opt := range opts {
 		opt(i)
 	}
-	i.logger.Println("Initializing RPC server...")
+	i.logger.Println("[INFO] Initializing RPC server...")
 	if err := i.setupRPC(); err != nil {
 		i.Shutdown()
 		return i, err
 	}
-	i.logger.Println("Initializing Raft cluster...")
+	i.logger.Println("[INFO] Initializing Raft cluster...")
 	if err := i.setupRaft(); err != nil {
 		i.Shutdown()
 		return i, err
@@ -225,7 +237,7 @@ func NewInstance(name string, opts ...Option) (Instance, error) {
 		Port: i.bindPort + 2,
 	}
 
-	i.logger.Println("Initializing Serf cluster...")
+	i.logger.Println("[INFO] Initializing Serf cluster...")
 	if err := i.setupSerf(raftAddr, rpcAddr); err != nil {
 		i.Shutdown()
 		return i, err
@@ -239,8 +251,12 @@ func (i *instance) handleEvents() {
 		select {
 		case e := <-i.serfEventChannel:
 			i.handleSerfEvent(e)
+		case <-i.raft.LeaderCh():
+			close(i.readyCh)
 		case <-i.serf.ShutdownCh():
 			i.Shutdown()
+		case err := <-i.errCh:
+			i.logger.Printf("[ERR] %s", err)
 		case <-i.shutdownCh:
 			return
 		}

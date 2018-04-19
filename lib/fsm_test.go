@@ -39,10 +39,12 @@ func newMockSnapshotSink(b []byte) *mockSnapshotSink {
 func TestFSMSnapshot(t *testing.T) {
 	sink := newMockSnapshotSink([]byte{})
 	i := &instance{
-		caches: make(map[string]*cache),
+		caches:    make(map[string]*cache),
+		compactor: func(Cache, chan<- error, <-chan struct{}) {},
 	}
 	i2 := &instance{
-		caches: make(map[string]*cache),
+		caches:    make(map[string]*cache),
+		compactor: func(Cache, chan<- error, <-chan struct{}) {},
 	}
 	primeCache("1", i, t)
 	primeCache("2", i, t)

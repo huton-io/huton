@@ -12,6 +12,7 @@ import (
 
 const (
 	typeCacheExecute uint32 = iota
+	typeCacheCompaction
 	typeLeaveCluster
 )
 
@@ -52,7 +53,7 @@ func (i *instance) applyCacheBatch(cmd *huton_proto.CacheBatch) {
 		}
 		err := c.(*cache).executeSegment(seg)
 		if err == nil {
-			break
+			return
 		}
 		i.logger.Printf("[ERR] failed to execute batch: %v", err)
 		if j < i.raftApplicationRetries {

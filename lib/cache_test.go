@@ -1,6 +1,8 @@
 package huton
 
 import (
+	"io/ioutil"
+	"log"
 	"testing"
 )
 
@@ -60,5 +62,46 @@ func TestCacheDel(t *testing.T) {
 	val = c.Snapshot().Get([]byte("test"))
 	if val != nil {
 		t.Errorf("Expected nil val but got %v", val)
+	}
+}
+
+func TestCacheCompact(t *testing.T) {
+	instance := &instance{logger: log.New(ioutil.Discard, "", 0)}
+	c := newCache("test", instance)
+	b := c.NewBatch(2, 1000).(*segment)
+	err := b.Set([]byte("test"), []byte("testVal"))
+	if err != nil {
+		t.Errorf("Failed to set val: %s", err)
+	}
+	err = b.Set([]byte("test2"), []byte("testVal2"))
+	if err != nil {
+		t.Errorf("Failed to set val: %s", err)
+	}
+	err = c.executeSegment(b)
+	if err != nil {
+		t.Errorf("failed to execute batch: %s", err)
+	}
+	b = c.NewBatch(2, 1000).(*segment)
+	err = b.Set([]byte("test3"), []byte("testVal3"))
+	if err != nil {
+		t.Errorf("Failed to set val: %s", err)
+	}
+	err = b.Set([]byte("test4"), []byte("testVal4"))
+	if err != nil {
+		t.Errorf("Failed to set val: %s", err)
+	}
+	err = c.executeSegment(b)
+	if err != nil {
+		t.Errorf("failed to execute batch: %s", err)
+	}
+	if len(c.stack.segments) != 2 {
+		t.Errorf("unexpected stack size %d != 2", len(c.stack.segments))
+	}
+	err = c.Compact()
+	if err != nil {
+		t.Errorf("compaction failed: %s", err)
+	}
+	if len(c.stack.segments) != 1 {
+		t.Errorf("unexpected stack size %d != 1", len(c.stack.segments))
 	}
 }

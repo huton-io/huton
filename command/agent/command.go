@@ -68,6 +68,7 @@ func (c *cmd) run() int {
 		c.UI.Error(err.Error())
 		return 1
 	}
+	c.instance.WaitForReady()
 	return c.handleSignals()
 }
 
