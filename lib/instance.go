@@ -3,7 +3,6 @@ package huton
 import (
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -13,8 +12,6 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 	"github.com/hashicorp/serf/serf"
-	"github.com/huton-io/huton/lib/proto"
-	"google.golang.org/grpc"
 )
 
 const (
@@ -44,8 +41,7 @@ type Instance struct {
 	raftRetainSnapshotCount int
 	tlsConfig               *tls.Config
 	encryptionKey           []byte
-	rpcListener             net.Listener
-	rpc                     *grpc.Server
+	rpc                     *rpcServer
 	serfEventChannel        chan serf.Event
 	shutdownCh              chan struct{}
 	peersMu                 sync.Mutex
@@ -58,21 +54,22 @@ type Instance struct {
 	shutdownLock            sync.Mutex
 	shutdown                bool
 	errCh                   chan error
-	compactor               Compactor
 }
 
 // Cache returns the cache with the given name. If no cache exists with the
 // provided name, a new, empty cache with that name will be created.
-func (i *Instance) Cache(name string) *Cache {
+func (i *Instance) Cache(name string) (*Cache, error) {
 	i.dbMu.Lock()
 	defer i.dbMu.Unlock()
 	if c, ok := i.caches[name]; ok {
-		return c
+		return c, nil
 	}
-	dc := newCache(name, i)
+	dc, err := newCache(name, i)
+	if err != nil {
+		return nil, err
+	}
 	i.caches[name] = dc
-	go i.compactor(dc, i.errCh, i.shutdownCh)
-	return dc
+	return dc, nil
 }
 
 // IsLeader returns true if this instance is the cluster leader.
@@ -107,7 +104,6 @@ func (i *Instance) Leave() error {
 			i.logger.Printf("[ERR] failed to leave serf cluster: %v", err)
 		}
 	}
-	i.issueLeaveIntent()
 	// If we were not leader, wait to be safely removed from the cluster. We
 	// must wait to allow the raft replication to take place, otherwise an
 	// immediate shutdown could cause a loss of quorum.
@@ -158,10 +154,8 @@ func (i *Instance) Shutdown() error {
 			i.raftBoltStore.Close()
 		}
 	}
-	if i.rpcListener != nil {
-		if err := i.rpcListener.Close(); err != nil {
-			return fmt.Errorf("Failed to close RPC Listener: %s", err)
-		}
+	if i.rpc != nil {
+		i.rpc.Stop()
 	}
 	return nil
 }
@@ -202,13 +196,13 @@ func NewInstance(name string, opts ...Option) (*Instance, error) {
 		serfEventChannel:        make(chan serf.Event, 256),
 		errCh:                   make(chan error, 256),
 		readyCh:                 make(chan struct{}, 1),
-		compactor:               PeriodicCompactor(defaultCompactionInterval),
 	}
 	for _, opt := range opts {
 		opt(i)
 	}
 	i.logger.Println("[INFO] Initializing RPC server...")
-	if err := i.setupRPC(); err != nil {
+	var err error
+	if i.rpc, err = newRPCServer(i); err != nil {
 		i.Shutdown()
 		return i, err
 	}
@@ -251,13 +245,4 @@ func (i *Instance) handleEvents() {
 			return
 		}
 	}
-}
-
-func (i *Instance) issueLeaveIntent() {
-	t := typeLeaveCluster
-	cmd := &huton_proto.Command{
-		Type: &t,
-		Body: []byte(i.name),
-	}
-	i.apply(cmd)
 }

@@ -1,13 +1,16 @@
 package huton
 
 import (
+	"context"
 	"errors"
-	"io"
-	"sync"
 
-	"github.com/golang/protobuf/proto"
-
+	"github.com/couchbase/moss"
 	"github.com/huton-io/huton/lib/proto"
+)
+
+const (
+	cacheOpSet byte = iota
+	cacheOpDel
 )
 
 var (
@@ -15,28 +18,11 @@ var (
 	ErrWrongBatchType = errors.New("wrong batch implementation type")
 )
 
-// Batch is an interface for bulk operations on a cache. Batches can be continuously updated until
-// they are executed, after which they become immutable.
-type Batch interface {
-	// Set updates key with val. An error is returned if the value cannot be set.
-	Set(key, val []byte) error
-	// Del deletes key from the cache. An error is returned if the key-value pair cannot be deleted.
-	Del(key []byte) error
-}
-
-// Snapshot is a read-only view of the cache. Operations performed on the cache the snapshot is taken will
-// not be reflected in the snapshot.
-type Snapshot interface {
-	// Get retrieves the value for key from the snapshot.
-	Get(key []byte) []byte
-}
-
 // Cache is an in-memory key-value store.
 type Cache struct {
-	name     string
-	instance *Instance
-	stack    *segmentStack
-	mu       sync.Mutex
+	name       string
+	instance   *Instance
+	collection moss.Collection
 }
 
 // Name returns the name of the cache.
@@ -44,103 +30,65 @@ func (c *Cache) Name() string {
 	return c.name
 }
 
-// NewBatch creates and returns a new Batch supporting totalOps operations and a buffer size of totalBufSize.
-// All mutations on a Cache must go through a Batch, even if it's only one.
-func (c *Cache) NewBatch(totalOps, totalBufSize int) Batch {
-	return newSegment(totalOps, totalBufSize)
+// Set sets the value for the given key. An error is returned if the value could not be set.
+func (c *Cache) Set(key []byte, val []byte) error {
+	return c.instance.sendRPCToLeader(context.Background(), &huton_proto.CacheSet{
+		CacheName: c.name,
+		Key:       key,
+		Value:     val,
+	})
 }
 
-// ExecuteBatch executes all operations in a Batch in sequence. Execution is replicated on all nodes of the cluster asynchronously.
-// An error is returned if the issuance of replication for the batch could not be completed.
-func (c *Cache) ExecuteBatch(batch Batch) error {
-	seg, ok := batch.(*segment)
-	if !ok {
-		return ErrWrongBatchType
-	}
-	cacheOp, err := proto.Marshal(&huton_proto.CacheBatch{
-		CacheName: &c.name,
-		Buf:       seg.buf,
-		Meta:      seg.meta,
+// Delete deletes the value for the given key. An error is returned if the value could not be deleted.
+func (c *Cache) Delete(key []byte) error {
+	return c.instance.sendRPCToLeader(context.Background(), &huton_proto.CacheDel{
+		CacheName: c.name,
+		Key:       key,
 	})
+}
+
+// Get retrieves the value for the given key. An error is returned if something goes wrong while retrieving the value.
+// A value of nil means that the key was not found.
+func (c *Cache) Get(key []byte) ([]byte, error) {
+	ss, err := c.collection.Snapshot()
+	if err != nil {
+		return nil, err
+	}
+	return ss.Get(key, moss.ReadOptions{})
+}
+
+func (c *Cache) executeSet(key, value []byte) error {
+	batch, err := c.collection.NewBatch(1, len(key)+len(value)+16)
 	if err != nil {
 		return err
 	}
-	t := typeCacheExecute
-	cmd := &huton_proto.Command{
-		Type: &t,
-		Body: cacheOp,
+	if err := batch.Set(key, value); err != nil {
+		return err
 	}
-	return c.instance.apply(cmd)
+	return c.collection.ExecuteBatch(batch, moss.WriteOptions{})
 }
 
-// Snapshot creates a Snapshot of the cache. All reads from the cache must be performed from a Snapshot(). This ensures that the data
-// isn't mutated in the middle of a read.
-func (c *Cache) Snapshot() Snapshot {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	s := &segmentStack{}
-	if c.stack != nil {
-		s.segments = make([]*segment, 0, len(c.stack.segments))
-		s.segments = append(s.segments, c.stack.segments...)
+func (c *Cache) executeDelete(key []byte) error {
+	batch, err := c.collection.NewBatch(1, len(key))
+	if err != nil {
+		return err
 	}
-	return s
+	if err := batch.Del(key); err != nil {
+		return err
+	}
+	return c.collection.ExecuteBatch(batch, moss.WriteOptions{})
 }
 
-// Compact performs compaction on the cache. This operation is immediate and blocking. It should not be used unless you really know what you are doing.
-// Instead, a Compactor should be used to manage compaction in the background.
-func (c *Cache) Compact() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.stack == nil {
-		c.instance.logger.Printf("[INFO] Nothing to compact for cache %s. Skipping compaction for this cache.", c.name)
-		return nil
+func newCache(name string, inst *Instance) (*Cache, error) {
+	col, err := moss.NewCollection(moss.CollectionOptions{})
+	if err != nil {
+		return nil, err
 	}
-	c.instance.logger.Println("[INFO] Starting compaction")
-	it := c.stack.iter()
-	seg := newSegment(0, 0)
-	for op, k, v, err := it.current(); err != io.EOF; err = it.next() {
-		if err != nil {
-			c.instance.logger.Println("[ERR] Failed during compaction iteration.")
-			return err
-		}
-		if k != nil && v != nil {
-			if err := seg.mutate(op, k, v); err != nil {
-				c.instance.logger.Println("[ERR] Failed mutation during compaction.")
-				return err
-			}
-		}
-	}
-	c.stack = &segmentStack{
-		segments: []*segment{seg},
-	}
-	c.instance.logger.Println("[INFO] Compaction completed successfully.")
-	return nil
-}
-
-func (c *Cache) executeSegment(seg *segment) error {
-	if seg.isEmpty() {
-		return nil
-	}
-	seg.readyDeferredSort()
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.pushToStack(seg)
-	return nil
-}
-
-func (c *Cache) pushToStack(seg *segment) {
-	if c.stack == nil {
-		c.stack = &segmentStack{
-			segments: make([]*segment, 0, 1),
-		}
-	}
-	c.stack.segments = append(c.stack.segments, seg)
-}
-
-func newCache(name string, inst *Instance) *Cache {
 	c := &Cache{
-		name:     name,
-		instance: inst,
+		name:       name,
+		instance:   inst,
+		collection: col,
 	}
-	return c
+	err = c.collection.Start()
+	return c, err
 }
