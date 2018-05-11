@@ -8,10 +8,8 @@ import (
 
 	"fmt"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
-	"github.com/huton-io/huton/lib/proto"
 )
 
 const (
@@ -116,20 +114,13 @@ func (i *Instance) getRaftConfig() *raft.Config {
 	return raftConfig
 }
 
-func (i *Instance) apply(cmd *huton_proto.Command) error {
+func (i *Instance) apply(op byte, cmd []byte) error {
 	if i.raft == nil {
 		return nil
 	}
-	// Only the leader can commit raft logs, so if we aren't the leader, we need to forward it to him.
-	if !i.IsLeader() {
-		leader := i.raft.Leader()
-		i.peersMu.Lock()
-		defer i.peersMu.Unlock()
-		return i.sendCommand(i.peers[string(leader)], cmd)
-	}
-	b, err := proto.Marshal(cmd)
-	if err != nil {
-		return err
-	}
-	return i.raft.Apply(b, i.raftApplicationTimeout).Error()
+	b := make([]byte, 0, len(cmd)+1)
+	b = append(b, op)
+	b = append(b, cmd...)
+	future := i.raft.Apply(b, i.raftApplicationTimeout)
+	return future.Error()
 }

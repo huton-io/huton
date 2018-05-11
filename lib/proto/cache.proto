@@ -1,11 +1,28 @@
-syntax = "proto2";
+syntax = "proto3";
 
 package huton_proto;
 
-message CacheBatch {
-    required string cache_name = 1;
-    required bytes buf = 2;
-    repeated uint64 meta = 3;
+message CacheSet {
+    string cache_name = 1;
+    bytes key = 2;
+    bytes value = 3;
 }
 
+message CacheDel {
+    string cache_name = 1;
+    bytes key = 2;
+    bytes value = 3;
+}
 
+message CacheSetResp {
+
+}
+
+message CacheDelResp {
+    
+}
+
+service Cache {
+    rpc Set(CacheSet) returns (CacheSetResp);
+    rpc Del(CacheDel) returns (CacheDelResp);
+}

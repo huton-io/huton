@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"time"
 
 	"github.com/huton-io/huton/command/flags"
 	"github.com/huton-io/huton/lib"
@@ -25,7 +24,6 @@ type config struct {
 	keyFile         string
 	caFile          string
 	peers           []string
-	compactInterval time.Duration
 }
 
 func (c config) options() ([]huton.Option, error) {
@@ -54,9 +52,6 @@ func (c config) options() ([]huton.Option, error) {
 	if tlsConfig != nil {
 		opts = append(opts, huton.TLSConfig(tlsConfig))
 	}
-	if c.compactInterval > 0 {
-		opts = append(opts, huton.CompactionInterval(c.compactInterval))
-	}
 	return opts, nil
 }
 
@@ -72,7 +67,6 @@ func addFlags(fs *flag.FlagSet) *config {
 	fs.StringVar(&c.keyFile, "key", "", "private key associated with cert that is used for secure raft communications")
 	fs.StringVar(&c.caFile, "caFile", "", "CA file used for cert verification during secure raft communications")
 	fs.Var((*flags.StringSlice)(&c.peers), "peers", "peer list")
-	fs.Var((*flags.DurationString)(&c.compactInterval), "compact", "compaction interval")
 	return &c
 }
 
