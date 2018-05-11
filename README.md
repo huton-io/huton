@@ -25,7 +25,7 @@ package main
 import (
 	"strings"
 	"net/http"
-	"github.com/jonbonazza/huton/lib"
+	"github.com/huton-io/huton/lib"
 	"flag"
 )
 
