@@ -39,9 +39,6 @@ type RaftConfig struct {
 	// This directory must be write accessible by the huton process. The default
 	// is the current working directory.
 	BaseDir string
-	// ApplicationRetries is the number of times a raft log is attempted to to be
-	// applied by the Raft FSM. The default is no retries.
-	ApplicationRetries int
 	// ApplicationTimeout is an optional timeout for applying Raft logs. If this
 	// timeout is reached, the log is rejected by that node and if enough nodes
 	// reject a log, that log will not be committed and rolled back. The default is

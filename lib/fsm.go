@@ -22,21 +22,19 @@ func (i *Instance) Apply(l *raft.Log) interface{} {
 }
 
 func (i *Instance) applyCommand(op byte, cmd []byte) error {
-	for j := 0; j <= i.config.Replication.ApplicationRetries; j++ {
-		switch op {
-		case cacheOpSet:
-			var cacheSetCmd huton_proto.CacheSet
-			if err := proto.Unmarshal(cmd, &cacheSetCmd); err != nil {
-				continue
-			}
-			return i.applyCacheSet(&cacheSetCmd)
-		case cacheOpDel:
-			var cacheDelCmd huton_proto.CacheDel
-			if err := proto.Unmarshal(cmd, &cacheDelCmd); err != nil {
-				continue
-			}
-			return i.applyCacheDel(&cacheDelCmd)
+	switch op {
+	case cacheOpSet:
+		var cacheSetCmd huton_proto.CacheSet
+		if err := proto.Unmarshal(cmd, &cacheSetCmd); err != nil {
+			return err
 		}
+		return i.applyCacheSet(&cacheSetCmd)
+	case cacheOpDel:
+		var cacheDelCmd huton_proto.CacheDel
+		if err := proto.Unmarshal(cmd, &cacheDelCmd); err != nil {
+			return err
+		}
+		return i.applyCacheDel(&cacheDelCmd)
 	}
 	return nil
 }
@@ -46,12 +44,7 @@ func (i *Instance) applyCacheSet(cmd *huton_proto.CacheSet) error {
 	if err != nil {
 		return err
 	}
-	for j := 0; j <= i.config.Replication.ApplicationRetries; j++ {
-		if err = c.executeSet(cmd.Key, cmd.Value); err == nil {
-			break
-		}
-	}
-	return err
+	return c.executeSet(cmd.Key, cmd.Value)
 }
 
 func (i *Instance) applyCacheDel(cmd *huton_proto.CacheDel) error {
@@ -59,12 +52,7 @@ func (i *Instance) applyCacheDel(cmd *huton_proto.CacheDel) error {
 	if err != nil {
 		return err
 	}
-	for j := 0; j < i.config.Replication.ApplicationRetries; j++ {
-		if err = c.executeDelete(cmd.Key); err == nil {
-			break
-		}
-	}
-	return err
+	return c.executeDelete(cmd.Key)
 }
 
 func (i *Instance) applyLeaveCluster(name string) {
