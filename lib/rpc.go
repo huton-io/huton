@@ -41,7 +41,11 @@ func (s *rpcServer) Del(ctx context.Context, r *huton_proto.CacheDel) (*huton_pr
 }
 
 func (s *rpcServer) setup() error {
-	addr := net.JoinHostPort(s.instance.bindAddr, strconv.Itoa(s.instance.bindPort+2))
+	bindHost := s.instance.config.BindHost
+	if bindHost == "" {
+		bindHost = "127.0.0.1"
+	}
+	addr := net.JoinHostPort(bindHost, strconv.Itoa(s.instance.config.BindPort+2))
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err

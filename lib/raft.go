@@ -17,16 +17,21 @@ const (
 )
 
 func (i *Instance) setupRaft() error {
+	repConfig := i.config.Replication
+	bindHost := i.config.BindHost
+	if bindHost == "" {
+		bindHost = "127.0.0.1"
+	}
 	addr := &net.TCPAddr{
-		IP:   net.ParseIP(i.bindAddr),
-		Port: i.bindPort + 1,
+		IP:   net.ParseIP(bindHost),
+		Port: i.config.BindPort + 1,
 	}
 	var err error
-	i.raftTransport, err = i.getRaftTransport(addr)
+	i.raftTransport, err = i.getRaftTransport(addr, repConfig)
 	if err != nil {
 		return err
 	}
-	basePath := filepath.Join(i.baseDir, i.name)
+	basePath := filepath.Join(repConfig.BaseDir, i.name)
 	if err := ensurePath(basePath, true); err != nil {
 		return err
 	}
@@ -38,7 +43,7 @@ func (i *Instance) setupRaft() error {
 	if err != nil {
 		return err
 	}
-	snapshotStore, err := raft.NewFileSnapshotStore(basePath, i.raftRetainSnapshotCount, ioutil.Discard)
+	snapshotStore, err := raft.NewFileSnapshotStore(basePath, repConfig.RetainSnapshotCount, ioutil.Discard)
 	if err != nil {
 		return err
 	}
@@ -58,7 +63,7 @@ func (i *Instance) setupRaft() error {
 }
 
 func (i *Instance) maybePerformInitialBootstrap(raftConfig *raft.Config, cacheStore *raft.LogCache, snapshotStore raft.SnapshotStore) error {
-	if i.bootstrap {
+	if i.config.Bootstrap {
 		hasState, err := raft.HasExistingState(cacheStore, i.raftBoltStore, snapshotStore)
 		if err != nil {
 			return err
@@ -100,11 +105,11 @@ func (i *Instance) maybeRecoverRaft(
 	return nil
 }
 
-func (i *Instance) getRaftTransport(addr net.Addr) (*raft.NetworkTransport, error) {
-	if i.tlsConfig != nil {
-		return newTLSTransport(addr.String(), addr, 3, i.raftTransportTimeout, i.tlsConfig, ioutil.Discard)
+func (i *Instance) getRaftTransport(addr net.Addr, repConfig RaftConfig) (*raft.NetworkTransport, error) {
+	if repConfig.TLSConfig != nil {
+		return newTLSTransport(addr.String(), addr, 3, repConfig.TransportTimeout, repConfig.TLSConfig, ioutil.Discard)
 	}
-	return raft.NewTCPTransport(addr.String(), addr, 3, i.raftTransportTimeout, ioutil.Discard)
+	return raft.NewTCPTransport(addr.String(), addr, 3, repConfig.TransportTimeout, ioutil.Discard)
 }
 
 func (i *Instance) getRaftConfig() *raft.Config {
@@ -121,6 +126,6 @@ func (i *Instance) apply(op byte, cmd []byte) error {
 	b := make([]byte, 0, len(cmd)+1)
 	b = append(b, op)
 	b = append(b, cmd...)
-	future := i.raft.Apply(b, i.raftApplicationTimeout)
+	future := i.raft.Apply(b, i.config.Replication.ApplicationTimeout)
 	return future.Error()
 }

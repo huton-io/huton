@@ -23,24 +23,25 @@ func (i *Instance) setupSerf(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (err e
 func (i *Instance) getSerfConfig(raftAddr *net.TCPAddr, rpcAddr *net.TCPAddr) (*serf.Config, error) {
 	serfConfig := serf.DefaultConfig()
 	serfConfig.EnableNameConflictResolution = false
-	serfConfig.MemberlistConfig.BindAddr = i.bindAddr
-	serfConfig.MemberlistConfig.BindPort = i.bindPort
+	serfConfig.MemberlistConfig.BindAddr = i.config.BindHost
+	serfConfig.MemberlistConfig.BindPort = i.config.BindPort
 	serfConfig.NodeName = i.name
 	serfConfig.EventCh = i.serfEventChannel
-	if i.encryptionKey != nil && len(i.encryptionKey) != 32 {
+	encKey := i.config.SerfEncryptionKey
+	if encKey != nil && len(encKey) != 32 {
 		return serfConfig, errors.New("invalid encryption key length. Encryption key must be 32-bytes")
 	}
-	serfConfig.MemberlistConfig.SecretKey = i.encryptionKey
+	serfConfig.MemberlistConfig.SecretKey = encKey
 	tags := make(map[string]string)
 	tags["id"] = serfConfig.NodeName
 	tags["raftIP"] = raftAddr.IP.String()
 	tags["raftPort"] = strconv.Itoa(raftAddr.Port)
 	tags["rpcIP"] = rpcAddr.IP.String()
 	tags["rpcPort"] = strconv.Itoa(rpcAddr.Port)
-	if i.bootstrap {
+	if i.config.Bootstrap {
 		tags["bootstrap"] = "1"
 	}
-	tags["expect"] = strconv.Itoa(i.bootstrapExpect)
+	tags["expect"] = strconv.Itoa(i.config.Expect)
 	serfConfig.Tags = tags
 	return serfConfig, nil
 }
@@ -71,7 +72,7 @@ func (i *Instance) peerJoined(event serf.MemberEvent) {
 			i.peers[raftAddr] = peer
 		}
 		i.peersMu.Unlock()
-		if i.bootstrapExpect > 0 {
+		if i.config.Expect > 0 {
 			i.logger.Printf("[INFO] testing bootstrap")
 			i.maybeBootstrap()
 		} else if i.IsLeader() {
@@ -99,13 +100,13 @@ func (i *Instance) maybeBootstrap() {
 	}
 	if index != 0 {
 		i.logger.Println("[INFO] raft data found, disabling boostrap mode")
-		i.bootstrapExpect = 0
+		i.config.Expect = 0
 		return
 	}
 	var peers []Peer
 	i.peersMu.Lock()
 	for _, peer := range i.peers {
-		if peer.Expect != 0 && peer.Expect != i.bootstrapExpect {
+		if peer.Expect != 0 && peer.Expect != i.config.Expect {
 			i.logger.Printf("[ERR] Member %v has a conflicting expect value. All nodes should expect the same number.", peer)
 			return
 		}
@@ -116,7 +117,7 @@ func (i *Instance) maybeBootstrap() {
 		peers = append(peers, *peer)
 	}
 	i.peersMu.Unlock()
-	if len(peers) < i.bootstrapExpect {
+	if len(peers) < i.config.Expect {
 		return
 	}
 	var configuration raft.Configuration
@@ -136,5 +137,5 @@ func (i *Instance) maybeBootstrap() {
 	if err := future.Error(); err != nil {
 		i.logger.Printf("[ERR] failed to bootstrap cluster: %v", err)
 	}
-	i.bootstrapExpect = 0
+	i.config.Expect = 0
 }

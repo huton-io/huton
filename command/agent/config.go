@@ -26,33 +26,28 @@ type config struct {
 	peers           []string
 }
 
-func (c config) options() ([]huton.Option, error) {
-	var opts []huton.Option
-	opts = append(opts, huton.Bootstrap(c.bootstrap))
-	if c.bindAddr != "" {
-		opts = append(opts, huton.BindAddr(c.bindAddr))
-	}
-	if c.bindPort >= 0 {
-		opts = append(opts, huton.BindPort(c.bindPort))
-	}
-	if c.bootstrapExpect >= 0 {
-		opts = append(opts, huton.BootstrapExpect(c.bootstrapExpect))
+func (c config) parse() (huton.Config, error) {
+	hutonConfig := huton.Config{
+		BindHost:  c.bindAddr,
+		BindPort:  c.bindPort,
+		Bootstrap: c.bootstrap,
+		Expect:    c.bootstrapExpect,
 	}
 	if c.encryptionKey != "" {
 		b, err := base64.StdEncoding.DecodeString(c.encryptionKey)
 		if err != nil {
-			return opts, err
+			return hutonConfig, err
 		}
-		opts = append(opts, huton.EncryptionKey(b))
+		hutonConfig.SerfEncryptionKey = b
 	}
 	tlsConfig, err := getTLSConfig(c.certFile, c.keyFile, c.caFile)
 	if err != nil {
-		return opts, err
+		return hutonConfig, err
 	}
 	if tlsConfig != nil {
-		opts = append(opts, huton.TLSConfig(tlsConfig))
+		hutonConfig.Replication.TLSConfig = tlsConfig
 	}
-	return opts, nil
+	return hutonConfig, nil
 }
 
 func addFlags(fs *flag.FlagSet) *config {

@@ -1,7 +1,6 @@
 package huton
 
 import (
-	"crypto/tls"
 	"errors"
 	"log"
 	"net"
@@ -25,35 +24,25 @@ var (
 
 // Instance is an interface for the Huton instance.
 type Instance struct {
-	name                    string
-	bindAddr                string
-	bindPort                int
-	baseDir                 string
-	bootstrap               bool
-	bootstrapExpect         int
-	serf                    *serf.Serf
-	raft                    *raft.Raft
-	raftBoltStore           *raftboltdb.BoltStore
-	raftTransport           *raft.NetworkTransport
-	raftTransportTimeout    time.Duration
-	raftApplicationRetries  int
-	raftApplicationTimeout  time.Duration
-	raftRetainSnapshotCount int
-	tlsConfig               *tls.Config
-	encryptionKey           []byte
-	rpc                     *rpcServer
-	serfEventChannel        chan serf.Event
-	shutdownCh              chan struct{}
-	peersMu                 sync.Mutex
-	peers                   map[string]*Peer
-	dbMu                    sync.Mutex
-	caches                  map[string]*Cache
-	logger                  *log.Logger
-	raftNotifyCh            chan bool
-	readyCh                 chan struct{}
-	shutdownLock            sync.Mutex
-	shutdown                bool
-	errCh                   chan error
+	name             string
+	config           *Config
+	logger           *log.Logger
+	serf             *serf.Serf
+	raft             *raft.Raft
+	raftBoltStore    *raftboltdb.BoltStore
+	raftTransport    *raft.NetworkTransport
+	rpc              *rpcServer
+	serfEventChannel chan serf.Event
+	shutdownCh       chan struct{}
+	peersMu          sync.Mutex
+	peers            map[string]*Peer
+	dbMu             sync.Mutex
+	caches           map[string]*Cache
+	raftNotifyCh     chan bool
+	readyCh          chan struct{}
+	shutdownLock     sync.Mutex
+	shutdown         bool
+	errCh            chan error
 }
 
 // Cache returns the cache with the given name. If no cache exists with the
@@ -178,28 +167,21 @@ func (i *Instance) numPeers() (int, error) {
 // GRPC server, with the provided configuration.
 //
 // If this function returns successfully, the instance should be considered started and ready for use.
-func NewInstance(name string, opts ...Option) (*Instance, error) {
+func NewInstance(name string, config Config) (*Instance, error) {
 	if name == "" {
 		return nil, ErrNoName
 	}
 	i := &Instance{
-		name:                    name,
-		bindAddr:                "127.0.0.1",
-		bindPort:                8100,
-		shutdownCh:              make(chan struct{}, 1),
-		peers:                   make(map[string]*Peer),
-		caches:                  make(map[string]*Cache),
-		logger:                  log.New(os.Stdout, "huton", log.LstdFlags),
-		raftApplicationTimeout:  10 * time.Second,
-		raftTransportTimeout:    10 * time.Second,
-		raftRetainSnapshotCount: 2,
-		serfEventChannel:        make(chan serf.Event, 256),
-		errCh:                   make(chan error, 256),
-		readyCh:                 make(chan struct{}, 1),
+		name:             name,
+		config:           &config,
+		shutdownCh:       make(chan struct{}, 1),
+		peers:            make(map[string]*Peer),
+		caches:           make(map[string]*Cache),
+		serfEventChannel: make(chan serf.Event, 256),
+		errCh:            make(chan error, 256),
+		readyCh:          make(chan struct{}, 1),
 	}
-	for _, opt := range opts {
-		opt(i)
-	}
+	i.ensureConfig()
 	i.logger.Println("[INFO] Initializing RPC server...")
 	var err error
 	if i.rpc, err = newRPCServer(i); err != nil {
@@ -211,14 +193,14 @@ func NewInstance(name string, opts ...Option) (*Instance, error) {
 		i.Shutdown()
 		return i, err
 	}
-	ip := net.ParseIP(i.bindAddr)
+	ip := net.ParseIP(i.config.BindHost)
 	raftAddr := &net.TCPAddr{
 		IP:   ip,
-		Port: i.bindPort + 1,
+		Port: i.config.BindPort + 1,
 	}
 	rpcAddr := &net.TCPAddr{
 		IP:   ip,
-		Port: i.bindPort + 2,
+		Port: i.config.BindPort + 2,
 	}
 
 	i.logger.Println("[INFO] Initializing Serf cluster...")
@@ -228,6 +210,19 @@ func NewInstance(name string, opts ...Option) (*Instance, error) {
 	}
 	go i.handleEvents()
 	return i, nil
+}
+
+func (i *Instance) ensureConfig() {
+	if i.config.BindHost == "" {
+		i.config.BindHost = "127.0.0.1"
+	}
+	if i.config.LogOutput == nil {
+		i.config.LogOutput = os.Stdout
+	}
+	if i.config.Expect < 3 {
+		i.config.Expect = 3
+	}
+	i.logger = log.New(os.Stdout, "huton", log.LstdFlags)
 }
 
 func (i *Instance) handleEvents() {

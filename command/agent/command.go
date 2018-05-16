@@ -53,12 +53,12 @@ func (c *cmd) Help() string {
 }
 
 func (c *cmd) run() int {
-	opts, err := c.conf.options()
+	hutonConfig, err := c.conf.parse()
 	if err != nil {
-		c.UI.Error(fmt.Sprintf("failed to parse options: %s", err))
+		c.UI.Error(fmt.Sprintf("failed to parse huton config: %s", err))
 		return 1
 	}
-	c.instance, err = huton.NewInstance(c.conf.name, opts...)
+	c.instance, err = huton.NewInstance(c.conf.name, hutonConfig)
 	if err != nil {
 		c.UI.Error(err.Error())
 		return 1
