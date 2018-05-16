@@ -22,7 +22,7 @@ func (i *Instance) Apply(l *raft.Log) interface{} {
 }
 
 func (i *Instance) applyCommand(op byte, cmd []byte) error {
-	for j := 0; j <= i.raftApplicationRetries; j++ {
+	for j := 0; j <= i.config.Replication.ApplicationRetries; j++ {
 		switch op {
 		case cacheOpSet:
 			var cacheSetCmd huton_proto.CacheSet
@@ -46,7 +46,7 @@ func (i *Instance) applyCacheSet(cmd *huton_proto.CacheSet) error {
 	if err != nil {
 		return err
 	}
-	for j := 0; j <= i.raftApplicationRetries; j++ {
+	for j := 0; j <= i.config.Replication.ApplicationRetries; j++ {
 		if err = c.executeSet(cmd.Key, cmd.Value); err == nil {
 			break
 		}
@@ -59,7 +59,7 @@ func (i *Instance) applyCacheDel(cmd *huton_proto.CacheDel) error {
 	if err != nil {
 		return err
 	}
-	for j := 0; j < i.raftApplicationRetries; j++ {
+	for j := 0; j < i.config.Replication.ApplicationRetries; j++ {
 		if err = c.executeDelete(cmd.Key); err == nil {
 			break
 		}
