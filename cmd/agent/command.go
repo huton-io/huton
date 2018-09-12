@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/huton-io/huton/lib"
+	"github.com/huton-io/huton/pkg"
 	"github.com/mitchellh/cli"
 )
 

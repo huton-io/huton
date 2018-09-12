@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/huton-io/huton/command"
+	"github.com/huton-io/huton/cmd"
 	"github.com/mitchellh/cli"
 )
 

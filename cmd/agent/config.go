@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	"github.com/huton-io/huton/command/flags"
-	"github.com/huton-io/huton/lib"
+	"github.com/huton-io/huton/cmd/flags"
+	"github.com/huton-io/huton/pkg"
 )
 
 type config struct {

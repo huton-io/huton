@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/couchbase/moss"
-	"github.com/huton-io/huton/lib/proto"
+	"github.com/huton-io/huton/pkg/proto"
 )
 
 const (

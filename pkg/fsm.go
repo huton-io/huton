@@ -6,7 +6,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/raft"
-	"github.com/huton-io/huton/lib/proto"
+	"github.com/huton-io/huton/pkg/proto"
 )
 
 var (
