@@ -1,6 +1,0 @@
-title: Huton
-#description: > # this means to ignore newlines until "show_downloads:"
-#    Distributed in-memory cache
-show_downloads: false
-# google_analytics:
-theme: jekyll-theme-cayman
